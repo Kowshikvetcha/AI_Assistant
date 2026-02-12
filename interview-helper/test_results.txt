@@ -1,0 +1,71 @@
+============================= test session starts =============================
+platform win32 -- Python 3.14.2, pytest-9.0.2, pluggy-1.6.0 -- C:\Users\kowsh\OneDrive\Desktop\Antigravity\AI_helper\interview-helper\venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\kowsh\OneDrive\Desktop\Antigravity\AI_helper\interview-helper
+plugins: anyio-4.12.1, asyncio-1.3.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 34 items
+
+backend/tests/test_llm.py::test_generate_answer_success PASSED           [  2%]
+backend/tests/test_llm.py::test_generate_answer_with_markdown_fences PASSED [  5%]
+backend/tests/test_llm.py::test_generate_answer_invalid_json PASSED      [  8%]
+backend/tests/test_llm.py::test_generate_answer_retry_on_error PASSED    [ 11%]
+backend/tests/test_llm.py::test_generate_answer_all_retries_fail PASSED  [ 14%]
+backend/tests/test_llm.py::test_parse_llm_json_valid PASSED              [ 17%]
+backend/tests/test_llm.py::test_parse_llm_json_with_fences PASSED        [ 20%]
+backend/tests/test_llm.py::test_parse_llm_json_invalid PASSED            [ 23%]
+backend/tests/test_performance.py::TestPerfTimer::test_perf_timer_measures_time PASSED [ 26%]
+backend/tests/test_performance.py::TestPerfTimer::test_perf_timer_with_logger PASSED [ 29%]
+backend/tests/test_performance.py::TestPerfTimer::test_perf_timer_on_exception PASSED [ 32%]
+backend/tests/test_performance.py::TestWavEncoding::test_encode_wav_returns_bytes PASSED [ 35%]
+backend/tests/test_performance.py::TestWavEncoding::test_encode_wav_clips_values PASSED [ 38%]
+backend/tests/test_performance.py::TestWavEncoding::test_encode_wav_mono PASSED [ 41%]
+backend/tests/test_performance.py::TestSilenceDetection::test_silent_audio FAILED [ 44%]
+backend/tests/test_performance.py::TestSilenceDetection::test_loud_audio FAILED [ 47%]
+backend/tests/test_performance.py::TestSilenceDetection::test_quiet_audio_below_threshold FAILED [ 50%]
+backend/tests/test_performance.py::TestSilenceDetection::test_custom_threshold FAILED [ 52%]
+backend/tests/test_performance.py::TestPerformanceMetrics::test_default_values PASSED [ 55%]
+backend/tests/test_performance.py::TestPerformanceMetrics::test_populated_metrics PASSED [ 58%]
+backend/tests/test_stt.py::test_transcribe_success PASSED                [ 61%]
+backend/tests/test_stt.py::test_transcribe_empty_response PASSED         [ 64%]
+backend/tests/test_stt.py::test_transcribe_retry_on_api_error PASSED     [ 67%]
+backend/tests/test_stt.py::test_transcribe_all_retries_exhausted PASSED  [ 70%]
+backend/tests/test_stt.py::test_transcribe_rate_limit_backoff PASSED     [ 73%]
+backend/tests/test_websocket.py::test_connect PASSED                     [ 76%]
+backend/tests/test_websocket.py::test_disconnect PASSED                  [ 79%]
+backend/tests/test_websocket.py::test_broadcast PASSED                   [ 82%]
+backend/tests/test_websocket.py::test_broadcast_removes_dead_connections PASSED [ 85%]
+backend/tests/test_websocket.py::test_send_personal PASSED               [ 88%]
+backend/tests/test_websocket.py::test_parse_control_message_valid PASSED [ 91%]
+backend/tests/test_websocket.py::test_parse_control_message_stop PASSED  [ 94%]
+backend/tests/test_websocket.py::test_parse_control_message_invalid_json PASSED [ 97%]
+backend/tests/test_websocket.py::test_parse_control_message_wrong_type PASSED [100%]
+
+================================== FAILURES ===================================
+___________________ TestSilenceDetection.test_silent_audio ____________________
+backend\tests\test_performance.py:91: in test_silent_audio
+    assert is_silent(audio) is True
+E   assert np.True_ is True
+E    +  where np.True_ = is_silent(array([[0., 0.],\n       [0., 0.],\n       [0., 0.],\n       ...,\n       [0., 0.],\n       [0., 0.],\n       [0., 0.]], shape=(48000, 2), dtype=float32))
+____________________ TestSilenceDetection.test_loud_audio _____________________
+backend\tests\test_performance.py:96: in test_loud_audio
+    assert is_silent(audio) is False
+E   assert np.False_ is False
+E    +  where np.False_ = is_silent(array([[0.5, 0.5],\n       [0.5, 0.5],\n       [0.5, 0.5],\n       ...,\n       [0.5, 0.5],\n       [0.5, 0.5],\n       [0.5, 0.5]], shape=(48000, 2), dtype=float32))
+____________ TestSilenceDetection.test_quiet_audio_below_threshold ____________
+backend\tests\test_performance.py:101: in test_quiet_audio_below_threshold
+    assert is_silent(audio, threshold=0.01) is True
+E   assert np.True_ is True
+E    +  where np.True_ = is_silent(array([[0.005, 0.005],\n       [0.005, 0.005],\n       [0.005, 0.005],\n       ...,\n       [0.005, 0.005],\n       [0.005, 0.005],\n       [0.005, 0.005]], shape=(48000, 2), dtype=float32), threshold=0.01)
+_________________ TestSilenceDetection.test_custom_threshold __________________
+backend\tests\test_performance.py:106: in test_custom_threshold
+    assert is_silent(audio, threshold=0.1) is True
+E   assert np.True_ is True
+E    +  where np.True_ = is_silent(array([[0.05, 0.05],\n       [0.05, 0.05],\n       [0.05, 0.05],\n       ...,\n       [0.05, 0.05],\n       [0.05, 0.05],\n       [0.05, 0.05]], shape=(48000, 2), dtype=float32), threshold=0.1)
+=========================== short test summary info ===========================
+FAILED backend/tests/test_performance.py::TestSilenceDetection::test_silent_audio
+FAILED backend/tests/test_performance.py::TestSilenceDetection::test_loud_audio
+FAILED backend/tests/test_performance.py::TestSilenceDetection::test_quiet_audio_below_threshold
+FAILED backend/tests/test_performance.py::TestSilenceDetection::test_custom_threshold
+======================== 4 failed, 30 passed in 9.66s =========================
+

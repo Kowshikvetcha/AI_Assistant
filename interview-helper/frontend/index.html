@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Interview Helper</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Title bar (draggable) -->
+    <div id="titlebar">
+      <div class="titlebar-left">
+        <span class="dot green"></span>
+        <span class="title-text">Interview Helper</span>
+      </div>
+      <div class="titlebar-right">
+        <button id="btn-minimize" class="title-btn" title="Minimize">─</button>
+        <button id="btn-close" class="title-btn close" title="Close">✕</button>
+      </div>
+    </div>
+
+    <!-- Controls -->
+    <div id="controls">
+      <button id="btn-start" class="ctrl-btn start">▶ Start</button>
+      <button id="btn-stop" class="ctrl-btn stop" disabled>⏹ Stop</button>
+      <button id="btn-clear" class="ctrl-btn clear">🗑 Clear</button>
+      <div id="status-indicator">
+        <span class="status-dot" id="status-dot"></span>
+        <span id="status-text">Disconnected</span>
+      </div>
+    </div>
+
+    <!-- Live Transcript -->
+    <section id="section-transcript" class="section">
+      <h3 class="section-title">🎙 Live Transcript</h3>
+      <div id="transcript-content" class="section-body scrollable">
+        <p class="placeholder">Waiting for audio...</p>
+      </div>
+    </section>
+
+    <!-- Direct Answer -->
+    <section id="section-answer" class="section">
+      <h3 class="section-title">💡 Answer</h3>
+      <div id="answer-content" class="section-body scrollable">
+        <p class="placeholder">Answers will appear here</p>
+      </div>
+    </section>
+
+    <!-- Bullet Points -->
+    <section id="section-bullets" class="section">
+      <h3 class="section-title">📋 Key Points</h3>
+      <ul id="bullets-content" class="section-body scrollable">
+        <li class="placeholder">Key points will appear here</li>
+      </ul>
+    </section>
+
+    <!-- Code Example -->
+    <section id="section-code" class="section">
+      <h3 class="section-title">💻 Code</h3>
+      <pre id="code-content" class="section-body scrollable code-block"><code class="placeholder">Code snippets will appear here</code></pre>
+    </section>
+
+    <!-- Follow-up -->
+    <section id="section-followup" class="section">
+      <h3 class="section-title">🔮 Possible Follow-up</h3>
+      <div id="followup-content" class="section-body">
+        <p class="placeholder">—</p>
+      </div>
+    </section>
+
+    <!-- Performance -->
+    <div id="perf-bar">
+      <span id="perf-stt">STT: —</span>
+      <span id="perf-llm">LLM: —</span>
+      <span id="perf-tokens">Tokens: —</span>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
