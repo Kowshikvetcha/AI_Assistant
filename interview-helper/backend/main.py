@@ -9,7 +9,7 @@ import time
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import get_settings
@@ -24,6 +24,7 @@ from websocket_manager import ConnectionManager, parse_control_message
 from audio_capture import capture_system_audio
 from stt import transcribe_audio
 from llm import generate_answer, summarize_context
+from resume_parser import parse_resume
 from utils import setup_logging, encode_wav, is_silent, perf_timer
 
 # ── Globals ──────────────────────────────────────────────────────────
@@ -34,6 +35,8 @@ manager = ConnectionManager()
 # Pipeline state
 _capture_task: asyncio.Task | None = None
 _is_capturing = False
+_resume_context: str = ""
+_resume_filename: str = ""
 
 
 # ── Lifespan ─────────────────────────────────────────────────────────
@@ -71,6 +74,48 @@ async def health():
         "status": "ok",
         "capturing": _is_capturing,
         "clients": manager.client_count,
+        "resume_loaded": bool(_resume_context),
+    }
+
+
+# ── Resume Upload ────────────────────────────────────────────────────
+@app.post("/upload-resume")
+async def upload_resume(file: UploadFile = File(...)):
+    """Upload a resume (PDF or TXT) to provide candidate context to the LLM."""
+    global _resume_context, _resume_filename
+    try:
+        file_bytes = await file.read()
+        _resume_context = parse_resume(file_bytes, file.filename or "resume.txt")
+        _resume_filename = file.filename or "resume"
+        logger.info(f"📄 Resume loaded: {_resume_filename} ({len(_resume_context)} chars)")
+
+        await manager.broadcast(
+            StatusMessage(
+                status="resume_loaded",
+                detail=f"Resume loaded: {_resume_filename}",
+            ).model_dump()
+        )
+
+        return {
+            "status": "ok",
+            "filename": _resume_filename,
+            "chars": len(_resume_context),
+        }
+    except ValueError as e:
+        logger.warning(f"⚠️  Resume upload failed: {e}")
+        return {"status": "error", "error": str(e)}
+    except Exception as e:
+        logger.error(f"❌ Resume upload error: {e}")
+        return {"status": "error", "error": "Failed to process resume file."}
+
+
+@app.get("/resume-status")
+async def resume_status():
+    """Check if a resume is currently loaded."""
+    return {
+        "loaded": bool(_resume_context),
+        "filename": _resume_filename if _resume_context else None,
+        "chars": len(_resume_context) if _resume_context else 0,
     }
 
 
@@ -128,7 +173,7 @@ async def _audio_consumer():
                     if _llm_task and not _llm_task.done():
                         _llm_task.cancel()
                     _llm_task = asyncio.create_task(
-                        _process_llm(combined_text, 0, interview_summary)
+                        _process_llm(combined_text, 0, interview_summary, _resume_context)
                     )
                     chunks_since_llm = 0
                     logger.info("🧠 LLM triggered (speech pause)")
@@ -199,7 +244,7 @@ async def _audio_consumer():
                 if _llm_task and not _llm_task.done():
                     _llm_task.cancel()
                 _llm_task = asyncio.create_task(
-                    _process_llm(combined_text, stt_latency, interview_summary)
+                    _process_llm(combined_text, stt_latency, interview_summary, _resume_context)
                 )
                 chunks_since_llm = 0
                 logger.info("🧠 LLM triggered (enough context)")
@@ -212,7 +257,8 @@ async def _audio_consumer():
 async def _process_llm(
     combined_text: str, 
     stt_latency: float, 
-    interview_summary: str = ""
+    interview_summary: str = "",
+    resume_context: str = "",
 ):
     """Run LLM in background so it doesn't block the STT pipeline."""
     try:
@@ -222,6 +268,7 @@ async def _process_llm(
             model=settings.LLM_MODEL,
             max_tokens=settings.LLM_MAX_TOKENS,
             interview_summary=interview_summary,
+            resume_context=resume_context,
         )
         await manager.broadcast(llm_resp.model_dump())
 

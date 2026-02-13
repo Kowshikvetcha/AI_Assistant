@@ -8,6 +8,7 @@
 const WS_URL = "ws://localhost:8765/ws";
 const RECONNECT_DELAY_MS = 3000;
 const MAX_TRANSCRIPT_LINES = 20;
+const BACKEND_URL = "http://localhost:8765";
 
 // ── DOM Elements ──
 const $ = (id) => document.getElementById(id);
@@ -18,6 +19,8 @@ const elements = {
     btnClear: $("btn-clear"),
     btnMinimize: $("btn-minimize"),
     btnClose: $("btn-close"),
+    btnResume: $("btn-resume"),
+    resumeStatus: $("resume-status"),
     statusDot: $("status-dot"),
     statusText: $("status-text"),
     transcript: $("transcript-content"),
@@ -45,6 +48,7 @@ function connect() {
     ws.onopen = () => {
         updateStatus("connected", "Connected");
         console.log("[WS] Connected to backend");
+        checkResumeStatus();
     };
 
     ws.onmessage = (event) => {
@@ -168,6 +172,9 @@ function onStatus(msg) {
         case "cleared":
             clearUI();
             break;
+        case "resume_loaded":
+            updateResumeStatus(msg.detail || "Resume loaded", true);
+            break;
         default:
             updateStatus("connected", msg.status);
     }
@@ -242,6 +249,74 @@ elements.btnMinimize.addEventListener("click", () => {
 elements.btnClose.addEventListener("click", () => {
     if (window.electronAPI) window.electronAPI.closeWindow();
 });
+
+// ── Resume Upload ──
+elements.btnResume.addEventListener("click", async () => {
+    if (!window.electronAPI) {
+        console.error("[Resume] electronAPI not available");
+        return;
+    }
+
+    try {
+        updateResumeStatus("Selecting file...", false);
+        const fileData = await window.electronAPI.selectResumeFile();
+
+        if (!fileData) {
+            updateResumeStatus("No resume loaded", false);
+            return;
+        }
+
+        updateResumeStatus("Uploading...", false);
+
+        // Convert base64 back to binary and create FormData
+        const byteChars = atob(fileData.buffer);
+        const byteArray = new Uint8Array(byteChars.length);
+        for (let i = 0; i < byteChars.length; i++) {
+            byteArray[i] = byteChars.charCodeAt(i);
+        }
+        const blob = new Blob([byteArray]);
+
+        const formData = new FormData();
+        formData.append("file", blob, fileData.name);
+
+        const response = await fetch(`${BACKEND_URL}/upload-resume`, {
+            method: "POST",
+            body: formData,
+        });
+
+        const result = await response.json();
+
+        if (result.status === "ok") {
+            updateResumeStatus(`✅ ${result.filename}`, true);
+            console.log(`[Resume] Loaded: ${result.filename} (${result.chars} chars)`);
+        } else {
+            updateResumeStatus(`❌ ${result.error}`, false);
+            console.error("[Resume] Upload error:", result.error);
+        }
+    } catch (err) {
+        updateResumeStatus("❌ Upload failed", false);
+        console.error("[Resume] Error:", err);
+    }
+});
+
+function updateResumeStatus(text, loaded) {
+    elements.resumeStatus.textContent = text;
+    elements.resumeStatus.className = loaded
+        ? "resume-status loaded"
+        : "resume-status";
+}
+
+async function checkResumeStatus() {
+    try {
+        const response = await fetch(`${BACKEND_URL}/resume-status`);
+        const data = await response.json();
+        if (data.loaded) {
+            updateResumeStatus(`✅ ${data.filename}`, true);
+        }
+    } catch (err) {
+        console.log("[Resume] Could not check resume status:", err.message);
+    }
+}
 
 // ── Initialize ──
 connect();

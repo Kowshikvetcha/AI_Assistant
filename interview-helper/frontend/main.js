@@ -4,8 +4,9 @@
  * Registers global shortcut Ctrl+Shift+H to toggle visibility.
  */
 
-const { app, BrowserWindow, globalShortcut, ipcMain } = require("electron");
+const { app, BrowserWindow, globalShortcut, ipcMain, dialog } = require("electron");
 const path = require("path");
+const fs = require("fs");
 
 let mainWindow = null;
 
@@ -88,6 +89,31 @@ ipcMain.on("window-minimize", () => {
 
 ipcMain.on("window-close", () => {
   if (mainWindow) mainWindow.close();
+});
+
+// IPC: Resume file selection
+ipcMain.handle("select-resume-file", async () => {
+  const result = await dialog.showOpenDialog({
+    title: "Select Resume",
+    filters: [
+      { name: "Resume Files", extensions: ["pdf", "txt"] },
+      { name: "All Files", extensions: ["*"] },
+    ],
+    properties: ["openFile"],
+  });
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return null;
+  }
+
+  const filePath = result.filePaths[0];
+  const fileBuffer = fs.readFileSync(filePath);
+  const fileName = path.basename(filePath);
+
+  return {
+    buffer: fileBuffer.toString("base64"),
+    name: fileName,
+  };
 });
 
 app.on("will-quit", () => {

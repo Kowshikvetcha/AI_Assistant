@@ -27,6 +27,7 @@ Rules:
 - Keep answers concise and interview-appropriate
 - Use bullet_points for structured key takeaways
 - Only include code_example if the question is about coding
+- If the candidate's resume/background is provided, tailor answers to highlight their relevant experience, skills, and projects
 - Respond ONLY with JSON, no markdown fences or extra text"""
 
 SUMMARY_PROMPT = """Compress the following interview transcript into a brief summary (3-5 sentences max).
@@ -75,6 +76,7 @@ async def generate_answer(
     max_tokens: int = 1024,
     max_retries: int = 3,
     interview_summary: str = "",
+    resume_context: str = "",
 ) -> tuple[LLMResponse, float, int]:
     """Generate a structured interview answer from a transcript.
 
@@ -83,6 +85,7 @@ async def generate_answer(
         api_key: OpenAI API key.
         model: Model name (e.g. gpt-4o, gpt-4-turbo).
         max_tokens: Maximum tokens in the response.
+        resume_context: Extracted text from the user's resume.
         max_retries: Retry attempts on failure.
         interview_summary: Running summary of earlier conversation.
 
@@ -97,6 +100,8 @@ async def generate_answer(
 
     # Build context-aware user message
     user_content = ""
+    if resume_context:
+        user_content += f"[Candidate background]\n{resume_context}\n\n"
     if interview_summary:
         user_content += f"[Interview so far]\n{interview_summary}\n\n"
     user_content += f"[Recent speech]\n{transcript}"
