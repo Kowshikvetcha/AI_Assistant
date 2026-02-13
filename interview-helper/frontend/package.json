@@ -1,5 +1,6 @@
 {
   "name": "interview-helper",
+  "productName": "Interview Helper",
   "version": "1.0.0",
   "description": "Real-Time Interview Helper — Floating Overlay",
   "main": "main.js",
@@ -7,10 +8,9 @@
     "start": "electron .",
     "dev": "electron . --dev"
   },
-  "dependencies": {
+  "devDependencies": {
     "electron": "^33.0.0"
   },
-  "devDependencies": {},
   "author": "Interview Helper",
   "license": "MIT"
 }

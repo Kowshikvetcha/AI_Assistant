@@ -17,9 +17,11 @@ function createWindow() {
     y: 80,
     frame: false,
     transparent: true,
+    type: "toolbar", // Windows: Treats window as a toolbar/dock, often hiding it from "Share Application" lists
     alwaysOnTop: true,
     resizable: true,
-    skipTaskbar: false,
+    skipTaskbar: true,
+    focusable: false, // Don't steal focus
     hasShadow: true,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -29,14 +31,23 @@ function createWindow() {
   });
 
   mainWindow.loadFile("index.html");
-  mainWindow.setAlwaysOnTop(true, "floating");
+  // Prevent window from being captured in screen shares/recordings
+  mainWindow.setContentProtection(true);
+  mainWindow.setAlwaysOnTop(true, "screen-saver"); // Highest priority
   mainWindow.setVisibleOnAllWorkspaces(true);
 
-  // Prevent window from being hidden behind other windows
+  // Aggressively keep window on top
+  const topInterval = setInterval(() => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.setAlwaysOnTop(true, "screen-saver");
+      mainWindow.moveTop();
+    }
+  }, 1000);
+
   mainWindow.on("blur", () => {
-    if (mainWindow && mainWindow.isAlwaysOnTop()) {
-      // Re-assert always on top
-      mainWindow.setAlwaysOnTop(true, "floating");
+    // Re-assert always on top
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.setAlwaysOnTop(true, "screen-saver");
     }
   });
 
