@@ -13,27 +13,47 @@ from utils import perf_timer
 
 logger = logging.getLogger("interview_helper")
 
-SYSTEM_PROMPT = """You are an expert technical interview assistant. Provide concise, structured, high-quality answers suitable for live interviews. Avoid unnecessary verbosity. Provide bullet points and short explanations.
+SYSTEM_PROMPT = """You are a technical interview copilot. Your job is to produce accurate, concise, interview-ready answers.
 
-You MUST respond in valid JSON with this exact schema:
+You MUST output valid JSON with exactly this schema:
 {
-  "summary": "One-line summary of what was asked",
-  "direct_answer": "Clear, direct answer (2-3 sentences max)",
+  "summary": "One-line summary of the question",
+  "direct_answer": "Clear spoken answer (2-4 sentences)",
   "bullet_points": ["Key point 1", "Key point 2", "Key point 3"],
   "code_example": "Short code snippet if relevant, otherwise empty string",
-  "followup_question": "A smart follow-up question they might ask"
+  "followup_question": "One strong interviewer-style follow-up question"
 }
 
-Rules:
-- Keep answers concise and interview-appropriate
-- Use bullet_points for structured key takeaways
-- Only include code_example if the question is about coding
-- If the candidate's resume/background is provided, tailor answers to highlight their relevant experience, skills, and projects
-- Respond ONLY with JSON, no markdown fences or extra text"""
+Behavior rules:
+- Be correct first, concise second.
+- Prefer practical tradeoffs, not generic theory.
+- If context is ambiguous, state the most likely interpretation in direct_answer.
+- Do not invent resume/project details. Use candidate background only when explicitly relevant.
+- If unsure, say so briefly and provide the safest technically correct answer.
+- Keep bullet_points to 3-5 short items.
+- code_example must be empty unless the question is coding/implementation focused.
+- Never include markdown fences, commentary, or any text outside the JSON object.
+"""
 
 SUMMARY_PROMPT = """Compress the following interview transcript into a brief summary (3-5 sentences max).
 Capture: key topics discussed, questions asked, and important answers given.
 Do NOT include filler or repetition. Output ONLY the summary text, no JSON."""
+
+JSON_REPAIR_PROMPT = """You repair malformed model output into valid JSON.
+
+Return ONLY a valid JSON object with exactly these keys:
+- summary (string)
+- direct_answer (string)
+- bullet_points (array of strings)
+- code_example (string)
+- followup_question (string)
+
+Rules:
+- Preserve original meaning as much as possible.
+- If any field is missing, set it to an empty value.
+- Do not add extra keys.
+- No markdown, no explanations, JSON only.
+"""
 
 # Module-level client
 _client: AsyncOpenAI | None = None
@@ -53,8 +73,8 @@ def _get_client(api_key: str, base_url: Optional[str] = None) -> AsyncOpenAI:
     return _client
 
 
-def _parse_llm_json(raw: str) -> dict:
-    """Parse LLM response text into a dict, handling common issues."""
+def _parse_llm_json(raw: str) -> dict | None:
+    """Parse LLM response text into a dict. Returns None if invalid."""
     text = raw.strip()
     # Strip markdown fences if present
     if text.startswith("```"):
@@ -66,14 +86,62 @@ def _parse_llm_json(raw: str) -> dict:
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        logger.warning(f"Failed to parse LLM JSON, returning raw text")
-        return {
-            "summary": "",
-            "direct_answer": text[:500],
-            "bullet_points": [],
-            "code_example": "",
-            "followup_question": "",
-        }
+        return None
+
+
+def _fallback_payload_from_text(raw: str) -> dict:
+    """Final fallback payload when parsing/repair both fail."""
+    text = raw.strip()
+    return {
+        "summary": "",
+        "direct_answer": text[:500],
+        "bullet_points": [],
+        "code_example": "",
+        "followup_question": "",
+    }
+
+
+def _normalize_payload(payload: dict) -> dict:
+    """Normalize payload to expected schema and types."""
+    bullets = payload.get("bullet_points", [])
+    if not isinstance(bullets, list):
+        bullets = [str(bullets)]
+    bullets = [str(b).strip() for b in bullets if str(b).strip()]
+
+    return {
+        "summary": str(payload.get("summary", "")).strip(),
+        "direct_answer": str(payload.get("direct_answer", "")).strip(),
+        "bullet_points": bullets,
+        "code_example": str(payload.get("code_example", "")).strip(),
+        "followup_question": str(payload.get("followup_question", "")).strip(),
+    }
+
+
+async def _repair_llm_json(
+    raw_content: str,
+    client: AsyncOpenAI,
+    model: str,
+) -> dict | None:
+    """Attempt one strict JSON repair pass using the same LLM."""
+    try:
+        response = await client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": JSON_REPAIR_PROMPT},
+                {"role": "user", "content": raw_content},
+            ],
+            max_tokens=500,
+            temperature=0.0,
+            response_format={"type": "json_object"},
+        )
+        repaired_raw = response.choices[0].message.content or ""
+        repaired = _parse_llm_json(repaired_raw)
+        if repaired is None:
+            return None
+        return _normalize_payload(repaired)
+    except Exception as e:
+        logger.warning(f"JSON repair pass failed: {e}")
+        return None
 
 
 async def generate_answer(
@@ -133,6 +201,13 @@ async def generate_answer(
             tokens_used = response.usage.total_tokens if response.usage else 0
 
             parsed = _parse_llm_json(raw_content)
+            if parsed is None:
+                logger.warning("Primary JSON parse failed, running repair pass")
+                parsed = await _repair_llm_json(raw_content, client, model)
+            if parsed is None:
+                logger.warning("JSON repair failed, using text fallback payload")
+                parsed = _fallback_payload_from_text(raw_content)
+            parsed = _normalize_payload(parsed)
             llm_response = LLMResponse(
                 summary=parsed.get("summary", ""),
                 direct_answer=parsed.get("direct_answer", ""),
