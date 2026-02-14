@@ -46,7 +46,7 @@ python -m venv venv
 
 # 2. Copy and configure .env
 copy .env.example .env
-# Edit .env and add your OpenAI API key
+# Edit .env and set your API key/model values
 
 # 3. Install backend + frontend dependencies
 cd backend && pip install -r requirements.txt && cd ..
@@ -67,7 +67,7 @@ cd frontend && npm start
 - **Python 3.10 or 3.13** (⚠️ NOT 3.14 — compatibility issues with pydantic-core)
 - **Node.js 18+** and **npm**
 - **Windows** (for WASAPI loopback audio capture)
-- **OpenAI API Key** with access to Whisper and GPT-4o
+- **API key** for your configured provider/model stack
 - **Rust** (automatically installed with Python dependencies if needed)
 
 ---
@@ -105,12 +105,18 @@ Create a `.env` file in the `interview-helper/` directory (NOT the root):
 copy .env.example .env
 ```
 
-Edit `.env` and set your OpenAI API key:
+Edit `.env` and set your API key/models:
 
 ```
-OPENAI_API_KEY=sk-your-actual-key-here
+AI_PROVIDER=openai
+AI_API_KEY=sk-your-actual-key-here
+# Optional for OpenAI-compatible providers:
+# AI_BASE_URL=https://api.openai.com/v1
 WEBSOCKET_PORT=8765
-LLM_MODEL=gpt-4o
+# Optional model overrides (leave empty for provider defaults)
+LLM_MODEL=
+SUMMARY_MODEL=
+STT_MODEL=
 LLM_MAX_TOKENS=1024
 AUDIO_CHUNK_DURATION=2
 LOG_LEVEL=INFO
@@ -228,24 +234,31 @@ Tests mock all OpenAI API calls — no API key required.
 
 | Variable | Default | Description |
 |---|---|---|
-| `OPENAI_API_KEY` | — | Required. Your OpenAI API key |
+| `AI_PROVIDER` | `openai` | Provider label (for config clarity/logging) |
+| `AI_API_KEY` | — | Preferred API key variable |
+| `AI_BASE_URL` | — | Optional base URL for OpenAI-compatible providers |
+| `OPENAI_API_KEY` | — | Legacy fallback key variable |
 | `WEBSOCKET_PORT` | `8765` | Backend WebSocket port |
 | `AUDIO_CHUNK_DURATION` | `2` | Audio chunk length in seconds |
-| `LLM_MODEL` | `gpt-4o` | OpenAI model name |
+| `LLM_MODEL` | provider default | Main answer model override |
+| `SUMMARY_MODEL` | provider default | Transcript summary model override |
+| `STT_MODEL` | provider default | Speech-to-text model override |
 | `LLM_MAX_TOKENS` | `1024` | Max response tokens |
 | `LOG_LEVEL` | `INFO` | Logging level |
+
+Provider presets (OpenAI-compatible): `openai`, `openrouter`, `groq`, `together`, `fireworks`, `deepseek`, `ollama`.
 
 ---
 
 ## Troubleshooting
 
-### ❌ `ValidationError: OPENAI_API_KEY Field required`
+### ❌ `Missing API key. Set AI_API_KEY (or OPENAI_API_KEY).`
 
 **Cause:** `.env` file not found or in wrong location.
 
 **Solution:** 
 - Ensure `.env` is in the `interview-helper/` directory (not root)
-- Verify it contains: `OPENAI_API_KEY=sk-your-key`
+- Verify it contains either: `AI_API_KEY=...` or `OPENAI_API_KEY=...`
 - Restart the backend after creating `.env`
 
 ### ❌ `Port 8765 already in use`

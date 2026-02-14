@@ -20,6 +20,8 @@ const elements = {
     btnMinimize: $("btn-minimize"),
     btnClose: $("btn-close"),
     btnResume: $("btn-resume"),
+    chatInput: $("chat-input"),
+    btnChatSend: $("btn-chat-send"),
     resumeStatus: $("resume-status"),
     statusDot: $("status-dot"),
     statusText: $("status-text"),
@@ -38,6 +40,7 @@ const elements = {
 let ws = null;
 let transcriptLines = [];
 let isCapturing = false;
+let isChatLoading = false;
 
 // ── WebSocket Connection ──
 function connect() {
@@ -319,4 +322,54 @@ async function checkResumeStatus() {
 }
 
 // ── Initialize ──
+function setChatLoading(loading) {
+    isChatLoading = loading;
+    elements.chatInput.disabled = loading;
+    elements.btnChatSend.disabled = loading;
+    elements.btnChatSend.textContent = loading ? "..." : "Send";
+}
+
+async function sendChatQuestion() {
+    if (isChatLoading) return;
+
+    const question = elements.chatInput.value.trim();
+    if (!question) return;
+
+    setChatLoading(true);
+    updateStatus("connected", "Thinking...");
+
+    try {
+        const response = await fetch(`${BACKEND_URL}/chat`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ question }),
+        });
+
+        const result = await response.json();
+        if (result.type === "llm_response") {
+            onLLMResponse(result);
+            elements.chatInput.value = "";
+            updateStatus(
+                isCapturing ? "capturing" : "connected",
+                isCapturing ? "Capturing..." : "Connected"
+            );
+            return;
+        }
+
+        throw new Error(result.error || "Chat request failed");
+    } catch (err) {
+        onError({ error: err.message || "Chat request failed" });
+    } finally {
+        setChatLoading(false);
+    }
+}
+
+elements.btnChatSend.addEventListener("click", sendChatQuestion);
+elements.chatInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+        event.preventDefault();
+        sendChatQuestion();
+    }
+});
 connect();
+

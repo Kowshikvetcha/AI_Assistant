@@ -6,7 +6,7 @@ Handles async transcription with retry logic and rate limit handling.
 import asyncio
 import io
 import logging
-import time
+from typing import Optional
 from openai import AsyncOpenAI, APIError, RateLimitError, APITimeoutError
 from utils import perf_timer, encode_wav
 
@@ -14,13 +14,19 @@ logger = logging.getLogger("interview_helper")
 
 # Module-level client — initialized lazily
 _client: AsyncOpenAI | None = None
+_client_config: tuple[str, Optional[str]] | None = None
 
 
-def _get_client(api_key: str) -> AsyncOpenAI:
+def _get_client(api_key: str, base_url: Optional[str] = None) -> AsyncOpenAI:
     """Get or create the async OpenAI client."""
-    global _client
-    if _client is None:
-        _client = AsyncOpenAI(api_key=api_key, timeout=30.0)
+    global _client, _client_config
+    cfg = (api_key, base_url)
+    if _client is None or _client_config != cfg:
+        kwargs = {"api_key": api_key, "timeout": 30.0}
+        if base_url:
+            kwargs["base_url"] = base_url
+        _client = AsyncOpenAI(**kwargs)
+        _client_config = cfg
     return _client
 
 
@@ -29,6 +35,8 @@ async def transcribe_audio(
     api_key: str,
     max_retries: int = 3,
     language: str = "en",
+    model: str = "whisper-1",
+    base_url: Optional[str] = None,
 ) -> tuple[str, float]:
     """Transcribe audio bytes using OpenAI Whisper API.
 
@@ -44,7 +52,7 @@ async def transcribe_audio(
     Raises:
         RuntimeError: If all retries are exhausted.
     """
-    client = _get_client(api_key)
+    client = _get_client(api_key, base_url=base_url)
     last_error: Exception | None = None
 
     for attempt in range(1, max_retries + 1):
@@ -55,7 +63,7 @@ async def transcribe_audio(
                 audio_file.name = "audio.wav"
 
                 response = await client.audio.transcriptions.create(
-                    model="whisper-1",
+                    model=model,
                     file=audio_file,
                     language=language,
                     response_format="text",

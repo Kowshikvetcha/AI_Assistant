@@ -22,7 +22,7 @@ function createWindow() {
     alwaysOnTop: true,
     resizable: true,
     skipTaskbar: true,
-    focusable: false, // Don't steal focus
+    focusable: true, // Required so text inputs in the overlay can receive keyboard focus
     hasShadow: true,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),

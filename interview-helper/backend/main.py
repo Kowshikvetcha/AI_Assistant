@@ -19,6 +19,7 @@ from models import (
     ErrorMessage,
     PerformanceMetrics,
     TranscriptMessage,
+    ChatRequest,
 )
 from websocket_manager import ConnectionManager, parse_control_message
 from audio_capture import capture_system_audio
@@ -45,7 +46,10 @@ async def lifespan(app: FastAPI):
     """Startup / shutdown lifecycle."""
     logger.info("🚀 Interview Helper backend starting...")
     logger.info(f"   Port:  {settings.WEBSOCKET_PORT}")
-    logger.info(f"   Model: {settings.LLM_MODEL}")
+    logger.info(f"   Provider: {settings.provider}")
+    logger.info(f"   LLM model: {settings.llm_model}")
+    logger.info(f"   Summary model: {settings.summary_model}")
+    logger.info(f"   STT model: {settings.stt_model}")
     yield
     # Shutdown — cancel capture if running
     await stop_capture()
@@ -119,6 +123,32 @@ async def resume_status():
     }
 
 
+@app.post("/chat")
+async def chat(request: ChatRequest):
+    """Answer a manually typed user question via the same LLM pipeline."""
+    question = request.question.strip()
+    if not question:
+        return {"status": "error", "error": "Question cannot be empty."}
+
+    try:
+        llm_resp, _, _ = await generate_answer(
+            transcript=question,
+            api_key=settings.api_key,
+            model=settings.llm_model,
+            max_tokens=settings.LLM_MAX_TOKENS,
+            interview_summary="",
+            resume_context=_resume_context,
+            base_url=settings.base_url,
+        )
+        return llm_resp.model_dump()
+    except RuntimeError as e:
+        logger.error(f"❌ Chat LLM error: {e}")
+        return {"status": "error", "error": f"LLM error: {e}"}
+    except Exception as e:
+        logger.error(f"❌ Chat endpoint error: {e}")
+        return {"status": "error", "error": "Failed to process chat request."}
+
+
 # ── Audio → STT → LLM pipeline (producer/consumer) ─────────────────
 _audio_queue: asyncio.Queue | None = None
 
@@ -182,7 +212,10 @@ async def _audio_consumer():
             # ── STT ──────────────────────────────────────────────
             try:
                 transcript, stt_latency = await transcribe_audio(
-                    wav_bytes, settings.OPENAI_API_KEY
+                    wav_bytes,
+                    api_key=settings.api_key,
+                    model=settings.stt_model,
+                    base_url=settings.base_url,
                 )
             except RuntimeError as e:
                 logger.error(f"❌ STT error: {e}")
@@ -233,7 +266,9 @@ async def _audio_consumer():
                 interview_summary = await summarize_context(
                     old_summary=interview_summary,
                     new_text=to_summarize,
-                    api_key=settings.OPENAI_API_KEY,
+                    api_key=settings.api_key,
+                    model=settings.summary_model,
+                    base_url=settings.base_url,
                 )
 
             # Call LLM after 2 chunks (~4s of speech) — balances
@@ -264,11 +299,12 @@ async def _process_llm(
     try:
         llm_resp, llm_latency, tokens = await generate_answer(
             transcript=combined_text,
-            api_key=settings.OPENAI_API_KEY,
-            model=settings.LLM_MODEL,
+            api_key=settings.api_key,
+            model=settings.llm_model,
             max_tokens=settings.LLM_MAX_TOKENS,
             interview_summary=interview_summary,
             resume_context=resume_context,
+            base_url=settings.base_url,
         )
         await manager.broadcast(llm_resp.model_dump())
 
@@ -410,11 +446,29 @@ async def websocket_endpoint(websocket: WebSocket):
 # ── Run ──────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import uvicorn
+    import sys
+    import time
 
-    uvicorn.run(
-        "main:app",
-        host="0.0.0.0",
-        port=settings.WEBSOCKET_PORT,
-        reload=False,
-        log_level="info",
-    )
+    max_retries = 5
+    retry_delay = 2
+    
+    for attempt in range(1, max_retries + 1):
+        try:
+            uvicorn.run(
+                "main:app",
+                host="0.0.0.0",
+                port=settings.WEBSOCKET_PORT,
+                reload=False,
+                log_level="info",
+            )
+            break
+        except OSError as e:
+            if e.errno == 10048 and attempt < max_retries:  # "Address already in use"
+                logger.warning(
+                    f"Port {settings.WEBSOCKET_PORT} in use (attempt {attempt}/{max_retries}). "
+                    f"Retrying in {retry_delay}s..."
+                )
+                time.sleep(retry_delay)
+            else:
+                logger.error(f"Failed to bind to port {settings.WEBSOCKET_PORT}: {e}")
+                sys.exit(1)

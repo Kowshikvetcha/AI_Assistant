@@ -197,6 +197,43 @@ body {
   color: var(--green);
 }
 
+/* Chat Row */
+#chat-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px 8px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+#chat-input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: rgba(20, 20, 40, 0.5);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: 'Inter', sans-serif;
+  outline: none;
+}
+
+#chat-input::placeholder {
+  color: var(--text-dim);
+}
+
+#chat-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+
+.ctrl-btn.chat-send {
+  font-size: 11px;
+  padding: 5px 10px;
+}
+
 #status-indicator {
   margin-left: auto;
   display: flex;

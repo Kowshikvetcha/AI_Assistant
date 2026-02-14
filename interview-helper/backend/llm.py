@@ -6,6 +6,7 @@ Produces structured interview answers from transcripts.
 import asyncio
 import json
 import logging
+from typing import Optional
 from openai import AsyncOpenAI, APIError, RateLimitError, APITimeoutError
 from models import LLMResponse
 from utils import perf_timer
@@ -36,13 +37,19 @@ Do NOT include filler or repetition. Output ONLY the summary text, no JSON."""
 
 # Module-level client
 _client: AsyncOpenAI | None = None
+_client_config: tuple[str, Optional[str]] | None = None
 
 
-def _get_client(api_key: str) -> AsyncOpenAI:
+def _get_client(api_key: str, base_url: Optional[str] = None) -> AsyncOpenAI:
     """Get or create the async OpenAI client."""
-    global _client
-    if _client is None:
-        _client = AsyncOpenAI(api_key=api_key, timeout=30.0)
+    global _client, _client_config
+    cfg = (api_key, base_url)
+    if _client is None or _client_config != cfg:
+        kwargs = {"api_key": api_key, "timeout": 30.0}
+        if base_url:
+            kwargs["base_url"] = base_url
+        _client = AsyncOpenAI(**kwargs)
+        _client_config = cfg
     return _client
 
 
@@ -77,6 +84,7 @@ async def generate_answer(
     max_retries: int = 3,
     interview_summary: str = "",
     resume_context: str = "",
+    base_url: Optional[str] = None,
 ) -> tuple[LLMResponse, float, int]:
     """Generate a structured interview answer from a transcript.
 
@@ -95,7 +103,7 @@ async def generate_answer(
     Raises:
         RuntimeError: If all retries are exhausted.
     """
-    client = _get_client(api_key)
+    client = _get_client(api_key, base_url=base_url)
     last_error: Exception | None = None
 
     # Build context-aware user message
@@ -179,6 +187,8 @@ async def summarize_context(
     old_summary: str,
     new_text: str,
     api_key: str,
+    model: str = "gpt-4o-mini",
+    base_url: Optional[str] = None,
 ) -> str:
     """Compress old transcript text into a running summary.
 
@@ -192,7 +202,7 @@ async def summarize_context(
     Returns:
         Updated summary string.
     """
-    client = _get_client(api_key)
+    client = _get_client(api_key, base_url=base_url)
 
     content = ""
     if old_summary:
@@ -202,7 +212,7 @@ async def summarize_context(
     try:
         with perf_timer("summary_api", logger) as t:
             response = await client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=model,
                 messages=[
                     {"role": "system", "content": SUMMARY_PROMPT},
                     {"role": "user", "content": content},

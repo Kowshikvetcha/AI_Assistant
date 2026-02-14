@@ -67,3 +67,8 @@ class PerformanceMetrics(BaseModel):
     total_latency_ms: float = 0.0
     tokens_used: int = 0
     timestamp: float = 0.0
+
+
+class ChatRequest(BaseModel):
+    """Manual chat request from the UI."""
+    question: str = Field(..., min_length=1, description="User question text")
