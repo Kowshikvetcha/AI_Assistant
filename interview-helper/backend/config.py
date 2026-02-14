@@ -126,31 +126,40 @@ class Settings(BaseSettings):
         if self.AI_BASE_URL:
             return self.AI_BASE_URL
         preset = PROVIDER_PRESETS.get(self.provider)
-        return preset["base_url"] if preset else None
+        if preset:
+            return preset["base_url"]
+        raise ValueError(
+            f"Unknown AI_PROVIDER '{self.provider}'. Set AI_BASE_URL explicitly "
+            "or use a supported provider preset."
+        )
+
+    def _resolve_model(self, explicit: Optional[str], preset_key: str, label: str) -> str:
+        """Resolve model from explicit env value or provider preset."""
+        if explicit:
+            return explicit
+        preset = PROVIDER_PRESETS.get(self.provider)
+        if preset and preset_key in preset:
+            return preset[preset_key]
+        raise ValueError(
+            f"Missing {label} for provider '{self.provider}'. Set {label} in .env."
+        )
 
     @property
     def llm_model(self) -> str:
         """Effective main LLM model."""
-        if self.LLM_MODEL:
-            return self.LLM_MODEL
-        preset = PROVIDER_PRESETS.get(self.provider)
-        return preset["llm_model"] if preset else "gpt-4o"
+        return self._resolve_model(self.LLM_MODEL, "llm_model", "LLM_MODEL")
 
     @property
     def summary_model(self) -> str:
         """Effective summary model."""
-        if self.SUMMARY_MODEL:
-            return self.SUMMARY_MODEL
-        preset = PROVIDER_PRESETS.get(self.provider)
-        return preset["summary_model"] if preset else "gpt-4o-mini"
+        return self._resolve_model(
+            self.SUMMARY_MODEL, "summary_model", "SUMMARY_MODEL"
+        )
 
     @property
     def stt_model(self) -> str:
         """Effective STT model."""
-        if self.STT_MODEL:
-            return self.STT_MODEL
-        preset = PROVIDER_PRESETS.get(self.provider)
-        return preset["stt_model"] if preset else "whisper-1"
+        return self._resolve_model(self.STT_MODEL, "stt_model", "STT_MODEL")
 
 
 def get_settings() -> Settings:

@@ -8,10 +8,12 @@ import json
 import logging
 from typing import Optional
 from openai import AsyncOpenAI, APIError, RateLimitError, APITimeoutError
+from config import get_settings
 from models import LLMResponse
 from utils import perf_timer
 
 logger = logging.getLogger("interview_helper")
+settings = get_settings()
 
 SYSTEM_PROMPT = """You are a technical interview copilot. Your job is to produce accurate, concise, interview-ready answers.
 
@@ -147,7 +149,7 @@ async def _repair_llm_json(
 async def generate_answer(
     transcript: str,
     api_key: str,
-    model: str = "gpt-4o",
+    model: Optional[str] = None,
     max_tokens: int = 1024,
     max_retries: int = 3,
     interview_summary: str = "",
@@ -172,6 +174,7 @@ async def generate_answer(
         RuntimeError: If all retries are exhausted.
     """
     client = _get_client(api_key, base_url=base_url)
+    effective_model = model or settings.llm_model
     last_error: Exception | None = None
 
     # Build context-aware user message
@@ -186,7 +189,7 @@ async def generate_answer(
         try:
             with perf_timer("llm_api", logger) as t:
                 response = await client.chat.completions.create(
-                    model=model,
+                    model=effective_model,
                     messages=[
                         {"role": "system", "content": SYSTEM_PROMPT},
                         {"role": "user", "content": user_content},
@@ -203,7 +206,7 @@ async def generate_answer(
             parsed = _parse_llm_json(raw_content)
             if parsed is None:
                 logger.warning("Primary JSON parse failed, running repair pass")
-                parsed = await _repair_llm_json(raw_content, client, model)
+                parsed = await _repair_llm_json(raw_content, client, effective_model)
             if parsed is None:
                 logger.warning("JSON repair failed, using text fallback payload")
                 parsed = _fallback_payload_from_text(raw_content)
@@ -262,7 +265,7 @@ async def summarize_context(
     old_summary: str,
     new_text: str,
     api_key: str,
-    model: str = "gpt-4o-mini",
+    model: Optional[str] = None,
     base_url: Optional[str] = None,
 ) -> str:
     """Compress old transcript text into a running summary.
@@ -278,6 +281,7 @@ async def summarize_context(
         Updated summary string.
     """
     client = _get_client(api_key, base_url=base_url)
+    effective_model = model or settings.summary_model
 
     content = ""
     if old_summary:
@@ -287,7 +291,7 @@ async def summarize_context(
     try:
         with perf_timer("summary_api", logger) as t:
             response = await client.chat.completions.create(
-                model=model,
+                model=effective_model,
                 messages=[
                     {"role": "system", "content": SUMMARY_PROMPT},
                     {"role": "user", "content": content},

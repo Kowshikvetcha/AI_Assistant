@@ -8,9 +8,11 @@ import io
 import logging
 from typing import Optional
 from openai import AsyncOpenAI, APIError, RateLimitError, APITimeoutError
+from config import get_settings
 from utils import perf_timer, encode_wav
 
 logger = logging.getLogger("interview_helper")
+settings = get_settings()
 
 # Module-level client — initialized lazily
 _client: AsyncOpenAI | None = None
@@ -35,7 +37,7 @@ async def transcribe_audio(
     api_key: str,
     max_retries: int = 3,
     language: str = "en",
-    model: str = "whisper-1",
+    model: Optional[str] = None,
     base_url: Optional[str] = None,
 ) -> tuple[str, float]:
     """Transcribe audio bytes using OpenAI Whisper API.
@@ -53,6 +55,7 @@ async def transcribe_audio(
         RuntimeError: If all retries are exhausted.
     """
     client = _get_client(api_key, base_url=base_url)
+    effective_model = model or settings.stt_model
     last_error: Exception | None = None
 
     for attempt in range(1, max_retries + 1):
@@ -63,7 +66,7 @@ async def transcribe_audio(
                 audio_file.name = "audio.wav"
 
                 response = await client.audio.transcriptions.create(
-                    model=model,
+                    model=effective_model,
                     file=audio_file,
                     language=language,
                     response_format="text",

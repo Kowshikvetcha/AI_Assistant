@@ -8,6 +8,7 @@ import io
 import wave
 import time
 import os
+from config import get_settings
 
 # Apply numpy patch BEFORE importing soundcard
 if not hasattr(np, "_original_fromstring"):
@@ -88,6 +89,9 @@ def record_and_test():
         
         api_key = os.environ.get("AI_API_KEY") or os.environ.get("OPENAI_API_KEY")
         base_url = os.environ.get("AI_BASE_URL")
+        stt_model = os.environ.get("STT_MODEL")
+        if not stt_model:
+            stt_model = get_settings().stt_model
         if not api_key:
             print("\n⚠️  No AI_API_KEY/OPENAI_API_KEY found, skipping Whisper test")
             return
@@ -104,7 +108,7 @@ def record_and_test():
         print("\n🎤 Sending to Whisper...")
         start = time.time()
         response = client.audio.transcriptions.create(
-            model="whisper-1",
+            model=stt_model,
             file=audio_file,
             language="en",
             response_format="text",
