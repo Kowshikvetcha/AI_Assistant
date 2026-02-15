@@ -284,6 +284,7 @@ body {
   padding: 8px 12px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+  overflow: hidden;
 }
 
 .section-title {
@@ -329,7 +330,7 @@ body {
 
 /* ── Transcript ── */
 #section-transcript {
-  flex-shrink: 1;
+  flex-shrink: 0;
   min-height: 60px;
 }
 
