@@ -17,6 +17,7 @@ const elements = {
     btnStart: $("btn-start"),
     btnStop: $("btn-stop"),
     btnClear: $("btn-clear"),
+    btnClearMemory: $("btn-clear-memory"),
     btnMinimize: $("btn-minimize"),
     btnClose: $("btn-close"),
     btnResume: $("btn-resume"),
@@ -178,6 +179,9 @@ function onStatus(msg) {
         case "resume_loaded":
             updateResumeStatus(msg.detail || "Resume loaded", true);
             break;
+        case "memory_cleared":
+            updateStatus("connected", msg.detail || "Memory cleared");
+            break;
         default:
             updateStatus("connected", msg.status);
     }
@@ -242,6 +246,10 @@ elements.btnStop.addEventListener("click", () => sendControl("stop"));
 elements.btnClear.addEventListener("click", () => {
     sendControl("clear");
     clearUI();
+});
+elements.btnClearMemory.addEventListener("click", () => {
+    updateStatus("connected", "Clearing memory...");
+    sendControl("clear_memory");
 });
 
 // Window controls via preload bridge

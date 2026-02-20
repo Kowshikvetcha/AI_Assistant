@@ -27,6 +27,10 @@ You MUST output valid JSON with exactly this schema:
 }
 
 Behavior rules:
+- Primary objective: answer the latest question first and in the most detail.
+- Treat any older interview context as low-priority background only.
+- If older context conflicts with the latest question, prioritize the latest question.
+- If multiple questions appear, answer only the most recent question unless the user explicitly asks to combine them.
 - Be correct first, concise second.
 - Prefer practical tradeoffs, not generic theory.
 - If context is ambiguous, state the most likely interpretation in direct_answer.
@@ -177,13 +181,13 @@ async def generate_answer(
     effective_model = model or settings.llm_model
     last_error: Exception | None = None
 
-    # Build context-aware user message
+    # Build context-aware user message with explicit priority ordering.
     user_content = ""
     if resume_context:
-        user_content += f"[Candidate background]\n{resume_context}\n\n"
+        user_content += f"[Candidate background - low priority]\n{resume_context}\n\n"
     if interview_summary:
-        user_content += f"[Interview so far]\n{interview_summary}\n\n"
-    user_content += f"[Recent speech]\n{transcript}"
+        user_content += f"[Older interview summary - low priority]\n{interview_summary}\n\n"
+    user_content += f"[Latest question - highest priority]\n{transcript}"
 
     for attempt in range(1, max_retries + 1):
         try:

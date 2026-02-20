@@ -38,6 +38,7 @@ _capture_task: asyncio.Task | None = None
 _is_capturing = False
 _resume_context: str = ""
 _resume_filename: str = ""
+_clear_memory_event = asyncio.Event()
 
 
 # ── Lifespan ─────────────────────────────────────────────────────────
@@ -192,6 +193,15 @@ async def _audio_consumer():
 
     while _is_capturing:
         try:
+            if _clear_memory_event.is_set():
+                transcript_buffer.clear()
+                interview_summary = ""
+                chunks_since_llm = 0
+                if _llm_task and not _llm_task.done():
+                    _llm_task.cancel()
+                _clear_memory_event.clear()
+                logger.info("Conversation memory cleared")
+
             # Wait for next audio chunk (with timeout to check _is_capturing)
             try:
                 wav_bytes = await asyncio.wait_for(_audio_queue.get(), timeout=0.5)
@@ -426,6 +436,15 @@ async def websocket_endpoint(websocket: WebSocket):
                 await manager.broadcast(
                     StatusMessage(
                         status="cleared", detail="Transcript cleared"
+                    ).model_dump()
+                )
+            elif control.action == "clear_memory":
+                logger.info("Conversation memory clear requested by client.")
+                _clear_memory_event.set()
+                await manager.broadcast(
+                    StatusMessage(
+                        status="memory_cleared",
+                        detail="Conversation memory cleared",
                     ).model_dump()
                 )
             else:
