@@ -36,6 +36,9 @@ class LLMResponse(BaseModel):
     followup_question: str = Field(
         "", description="Suggested follow-up question"
     )
+    latest_question_input: str = Field(
+        "", description="Debug: latest question text sent to the LLM"
+    )
     latency_ms: float = Field(0.0, description="LLM processing latency in ms")
     tokens_used: int = Field(0, description="Total tokens consumed")
 

@@ -32,6 +32,7 @@ const elements = {
     codeSection: $("section-code"),
     code: $("code-content"),
     followup: $("followup-content"),
+    debugQuestion: $("debug-question-content"),
     perfStt: $("perf-stt"),
     perfLlm: $("perf-llm"),
     perfTokens: $("perf-tokens"),
@@ -149,6 +150,11 @@ function onLLMResponse(msg) {
             msg.followup_question
         )}</p>`;
     }
+    if (msg.latest_question_input) {
+        elements.debugQuestion.innerHTML = `<p class="fade-in">${escapeHtml(
+            msg.latest_question_input
+        )}</p>`;
+    }
 
     // Performance
     if (msg.latency_ms) {
@@ -222,6 +228,7 @@ function clearUI() {
     elements.codeSection.classList.remove("visible");
     elements.code.innerHTML = '<code class="placeholder">Code snippets will appear here</code>';
     elements.followup.innerHTML = '<p class="placeholder">—</p>';
+    elements.debugQuestion.innerHTML = '<p class="placeholder">Waiting for first LLM call...</p>';
     elements.perfStt.textContent = "STT: —";
     elements.perfLlm.textContent = "LLM: —";
     elements.perfTokens.textContent = "Tokens: —";
@@ -380,4 +387,8 @@ elements.chatInput.addEventListener("keydown", (event) => {
     }
 });
 connect();
+
+
+
+
 

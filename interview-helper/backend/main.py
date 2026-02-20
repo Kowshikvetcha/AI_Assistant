@@ -7,6 +7,7 @@ Orchestrates: audio capture → STT → LLM → WebSocket broadcast.
 import asyncio
 import time
 import logging
+import re
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File
@@ -39,6 +40,25 @@ _is_capturing = False
 _resume_context: str = ""
 _resume_filename: str = ""
 _clear_memory_event = asyncio.Event()
+QUESTION_START_PHRASES = (
+    "what", "why", "how", "when", "where", "who", "which",
+    "can", "could", "would", "should", "do", "does", "did",
+    "is", "are", "was", "were", "explain", "compare", "difference between",
+)
+CONTINUATION_PREFIXES = (
+    "and ", "or ", "also ", "then ", "so ", "but ",
+    "because ", "while ", "with ", "of ", "to ", "for ", "in ",
+)
+TRAILING_INCOMPLETE_TOKENS = {
+    "and", "or", "to", "of", "for", "with", "between", "vs", "versus",
+    "the", "a", "an",
+}
+MIN_WORDS_WITH_QMARK = 4
+MIN_WORDS_NO_QMARK_QUESTION_START = 7
+MIN_WORDS_NO_QMARK_GENERIC = 9
+QUEUE_POLL_TIMEOUT_SECONDS = 0.4
+PAUSE_TRIGGER_SECONDS = 1.2
+MAX_INCOMPLETE_HOLD_SECONDS = 3.0
 
 
 # ── Lifespan ─────────────────────────────────────────────────────────
@@ -186,17 +206,52 @@ async def _audio_producer():
 
 async def _audio_consumer():
     """Process audio chunks from the queue: STT → broadcast → debounced LLM."""
-    transcript_buffer: list[str] = []
+    active_question_buffer: list[str] = []
+    summary_buffer: list[str] = []
     interview_summary: str = ""
-    chunks_since_llm = 0
+    silence_elapsed = 0.0
     _llm_task: asyncio.Task | None = None
+
+    def _should_trigger_question_boundary(latest_chunk: str) -> bool:
+        latest = latest_chunk.strip()
+        if not latest:
+            return False
+        return "?" in latest
+
+    def _looks_incomplete_question(assembled_text: str) -> bool:
+        text = assembled_text.strip().lower()
+        if not text:
+            return True
+        words = text.split()
+        word_count = len(words)
+        starts_like_question = text.startswith(QUESTION_START_PHRASES)
+        has_qmark = "?" in text
+
+        if has_qmark:
+            return word_count < MIN_WORDS_WITH_QMARK
+
+        # Without '?', be stricter so we avoid sending partial fragments.
+        if starts_like_question and word_count < MIN_WORDS_NO_QMARK_QUESTION_START:
+            return True
+        if not starts_like_question and word_count < MIN_WORDS_NO_QMARK_GENERIC:
+            return True
+        if text.startswith(CONTINUATION_PREFIXES):
+            return True
+        # Trailing connectors usually indicate the question is cut mid-sentence.
+        last_token = re.sub(r"[^a-z0-9]+$", "", words[-1]) if words else ""
+        if last_token in TRAILING_INCOMPLETE_TOKENS:
+            return True
+        if text.endswith((",", ":", "-", ";")):
+            return True
+        return False
 
     while _is_capturing:
         try:
             if _clear_memory_event.is_set():
-                transcript_buffer.clear()
+                active_question_buffer.clear()
+                summary_buffer.clear()
                 interview_summary = ""
-                chunks_since_llm = 0
+                silence_elapsed = 0.0
                 if _llm_task and not _llm_task.done():
                     _llm_task.cancel()
                 _clear_memory_event.clear()
@@ -204,18 +259,35 @@ async def _audio_consumer():
 
             # Wait for next audio chunk (with timeout to check _is_capturing)
             try:
-                wav_bytes = await asyncio.wait_for(_audio_queue.get(), timeout=0.5)
+                wav_bytes = await asyncio.wait_for(
+                    _audio_queue.get(), timeout=QUEUE_POLL_TIMEOUT_SECONDS
+                )
             except asyncio.TimeoutError:
                 # Timeout = speech pause → trigger LLM if we have new transcripts
-                if chunks_since_llm > 0 and transcript_buffer:
-                    combined_text = " ".join(transcript_buffer)
+                if active_question_buffer:
+                    combined_text = " ".join(active_question_buffer).strip()
+                    if not combined_text:
+                        continue
+                    silence_elapsed += QUEUE_POLL_TIMEOUT_SECONDS
+                    if _looks_incomplete_question(combined_text):
+                        if silence_elapsed >= MAX_INCOMPLETE_HOLD_SECONDS:
+                            logger.info(
+                                "Dropping stale incomplete question after long silence"
+                            )
+                            active_question_buffer.clear()
+                            silence_elapsed = 0.0
+                        logger.info("Skipping LLM trigger on pause (question looks incomplete)")
+                        continue
+                    if silence_elapsed < PAUSE_TRIGGER_SECONDS:
+                        continue
                     # Cancel previous LLM if still running
                     if _llm_task and not _llm_task.done():
                         _llm_task.cancel()
                     _llm_task = asyncio.create_task(
                         _process_llm(combined_text, 0, interview_summary, _resume_context)
                     )
-                    chunks_since_llm = 0
+                    active_question_buffer.clear()
+                    silence_elapsed = 0.0
                     logger.info("🧠 LLM triggered (speech pause)")
                 continue
 
@@ -261,16 +333,18 @@ async def _audio_consumer():
             await manager.broadcast(ts_msg.model_dump())
 
             # Accumulate context for LLM
-            transcript_buffer.append(transcript)
-            chunks_since_llm += 1
+            active_question_buffer.append(transcript)
+            summary_buffer.append(transcript)
+            silence_elapsed = 0.0
+            assembled_question = " ".join(active_question_buffer).strip()
 
             # ── Two-Tier Memory Management ──────────────────────
             # If buffer gets too large (>10 chunks / ~20s), compress oldest chunks
-            if len(transcript_buffer) >= 10:
+            if len(summary_buffer) >= 10:
                 # Take oldest 5 chunks to summarize
-                to_summarize = " ".join(transcript_buffer[:5])
+                to_summarize = " ".join(summary_buffer[:5])
                 # Keep newest chunks in buffer
-                transcript_buffer = transcript_buffer[5:]
+                summary_buffer = summary_buffer[5:]
                 
                 # Update summary (async, may block consumer briefly but queue handles it)
                 interview_summary = await summarize_context(
@@ -281,18 +355,21 @@ async def _audio_consumer():
                     base_url=settings.base_url,
                 )
 
-            # Call LLM after 2 chunks (~4s of speech) — balances
-            # freshness vs stability of the answer panel
-            if chunks_since_llm >= 2:
-                combined_text = " ".join(transcript_buffer)
-                # Cancel previous LLM if still running
+            # Trigger quickly when interviewer likely finished a question.
+            if active_question_buffer and _should_trigger_question_boundary(transcript):
+                if _looks_incomplete_question(assembled_question):
+                    logger.info("Ignoring boundary trigger (question looks incomplete)")
+                    continue
+                combined_text = assembled_question
                 if _llm_task and not _llm_task.done():
                     _llm_task.cancel()
                 _llm_task = asyncio.create_task(
                     _process_llm(combined_text, stt_latency, interview_summary, _resume_context)
                 )
-                chunks_since_llm = 0
-                logger.info("🧠 LLM triggered (enough context)")
+                active_question_buffer.clear()
+                silence_elapsed = 0.0
+                logger.info("LLM triggered (question boundary)")
+                continue
 
         except Exception as e:
             logger.error(f"Consumer error: {e}")
@@ -491,3 +568,4 @@ if __name__ == "__main__":
             else:
                 logger.error(f"Failed to bind to port {settings.WEBSOCKET_PORT}: {e}")
                 sys.exit(1)
+

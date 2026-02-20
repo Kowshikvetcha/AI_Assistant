@@ -6,6 +6,7 @@ Produces structured interview answers from transcripts.
 import asyncio
 import json
 import logging
+import re
 from typing import Optional
 from openai import AsyncOpenAI, APIError, RateLimitError, APITimeoutError
 from config import get_settings
@@ -38,7 +39,41 @@ Behavior rules:
 - If unsure, say so briefly and provide the safest technically correct answer.
 - Keep bullet_points to 3-5 short items.
 - code_example must be empty unless the question is coding/implementation focused.
+- If the latest question is coding/implementation relevant, code_example is required.
+- For coding questions, provide a short, correct, runnable snippet (8-25 lines), not pseudocode.
+- Prefer the language implied by the question; if unclear, default to Python.
+- Keep code focused on the main idea and avoid unnecessary boilerplate.
 - Never include markdown fences, commentary, or any text outside the JSON object.
+
+Tone and delivery rules (important):
+- direct_answer must sound like natural spoken interview speech, not a written essay.
+- Use first-person when appropriate (for example: "I’d approach this by...").
+- Keep direct_answer to 3-5 short sentences that can be read aloud in one breath.
+- Start with a clear one-line answer, then add practical reasoning.
+- Prefer plain words over jargon unless jargon is necessary for accuracy.
+- Avoid robotic transitions like "Certainly", "In conclusion", "Overall", or "As an AI".
+- Do not use buzzword-heavy or generic filler phrasing.
+- If useful, include one concrete real-world example in one sentence.
+- Keep confidence calibrated: confident when certain, explicit uncertainty when not.
+
+Question-type handling:
+- First classify the latest question as one of: conceptual/theory, coding/implementation, system design/architecture, behavioral.
+- Adapt depth and tone to that question type.
+
+Conceptual/theory answer format:
+- direct_answer should be 4-6 short sentences.
+- Use this order:
+  1) One-sentence definition.
+  2) One-sentence intuition (simple mental model or analogy if useful).
+  3) One-sentence practical impact in real engineering/ML work.
+  4) One-sentence concrete levers to tune/improve outcomes.
+  5) Optional one-sentence example.
+- Avoid generic textbook phrasing; include at least one concrete lever/decision variable when relevant.
+- For conceptual/theory questions, code_example must be empty.
+
+Coding/implementation answer format:
+- direct_answer can be shorter (3-5 short sentences) and should focus on approach + tradeoffs.
+- code_example is required and should be practical, correct, and minimal.
 """
 
 SUMMARY_PROMPT = """Compress the following interview transcript into a brief summary (3-5 sentences max).
@@ -123,6 +158,27 @@ def _normalize_payload(payload: dict) -> dict:
     }
 
 
+def _split_latest_question(transcript: str) -> tuple[str, str]:
+    """Return (latest_question, supporting_context) from recent transcript text."""
+    text = transcript.strip()
+    if not text:
+        return "", ""
+
+    # Prefer the last sentence that ends with a question mark.
+    q_matches = list(re.finditer(r"[^?]*\?", text, flags=re.DOTALL))
+    if q_matches:
+        latest_q = q_matches[-1].group(0).strip()
+        prefix = text[:q_matches[-1].start()].strip()
+        suffix = text[q_matches[-1].end():].strip()
+        support_parts = [part for part in (prefix, suffix) if part]
+        return latest_q, "\n".join(support_parts)
+
+    # If no explicit question mark is present, prefer the full recent utterance.
+    # This avoids sending trailing fragments like "of recommendation systems."
+    normalized = " ".join(part.strip() for part in text.splitlines() if part.strip())
+    return normalized, ""
+
+
 async def _repair_llm_json(
     raw_content: str,
     client: AsyncOpenAI,
@@ -181,13 +237,19 @@ async def generate_answer(
     effective_model = model or settings.llm_model
     last_error: Exception | None = None
 
+    latest_question, supporting_context = _split_latest_question(transcript)
+    if not latest_question:
+        latest_question = transcript.strip()
+
     # Build context-aware user message with explicit priority ordering.
     user_content = ""
     if resume_context:
         user_content += f"[Candidate background - low priority]\n{resume_context}\n\n"
     if interview_summary:
         user_content += f"[Older interview summary - low priority]\n{interview_summary}\n\n"
-    user_content += f"[Latest question - highest priority]\n{transcript}"
+    if supporting_context:
+        user_content += f"[Recent supporting context - medium priority]\n{supporting_context}\n\n"
+    user_content += f"[Latest question - highest priority]\n{latest_question}"
 
     for attempt in range(1, max_retries + 1):
         try:
@@ -221,6 +283,7 @@ async def generate_answer(
                 bullet_points=parsed.get("bullet_points", []),
                 code_example=parsed.get("code_example", ""),
                 followup_question=parsed.get("followup_question", ""),
+                latest_question_input=latest_question,
                 latency_ms=latency,
                 tokens_used=tokens_used,
             )
