@@ -44,6 +44,8 @@ QUESTION_START_PHRASES = (
     "what", "why", "how", "when", "where", "who", "which",
     "can", "could", "would", "should", "do", "does", "did",
     "is", "are", "was", "were", "explain", "compare", "difference between",
+    "tell", "describe", "walk", "name", "list", "give", "share",
+    "talk", "discuss", "elaborate", "define", "demonstrate",
 )
 CONTINUATION_PREFIXES = (
     "and ", "or ", "also ", "then ", "so ", "but ",
@@ -53,9 +55,9 @@ TRAILING_INCOMPLETE_TOKENS = {
     "and", "or", "to", "of", "for", "with", "between", "vs", "versus",
     "the", "a", "an",
 }
-MIN_WORDS_WITH_QMARK = 4
-MIN_WORDS_NO_QMARK_QUESTION_START = 7
-MIN_WORDS_NO_QMARK_GENERIC = 9
+MIN_WORDS_WITH_QMARK = 3
+MIN_WORDS_NO_QMARK_QUESTION_START = 4
+MIN_WORDS_NO_QMARK_GENERIC = 5
 QUEUE_POLL_TIMEOUT_SECONDS = 0.4
 PAUSE_TRIGGER_SECONDS = 1.2
 MAX_INCOMPLETE_HOLD_SECONDS = 3.0
@@ -229,6 +231,10 @@ async def _audio_consumer():
 
         if has_qmark:
             return word_count < MIN_WORDS_WITH_QMARK
+
+        # A sentence ending with a period is almost certainly complete.
+        if text.endswith(".") and word_count >= 3:
+            return False
 
         # Without '?', be stricter so we avoid sending partial fragments.
         if starts_like_question and word_count < MIN_WORDS_NO_QMARK_QUESTION_START:
