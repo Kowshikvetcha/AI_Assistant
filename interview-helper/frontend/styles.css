@@ -442,3 +442,14 @@ body {
 .section-body li {
   word-break: break-word;
 }
+
+/* ── Error message (non-recoverable, shown in transcript area) ── */
+.error-message {
+  color: var(--red);
+  font-size: 11px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-left: 2px solid var(--red);
+  padding-left: 8px;
+}

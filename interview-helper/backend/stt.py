@@ -114,5 +114,7 @@ async def transcribe_audio(
             break
 
     raise RuntimeError(
-        f"STT failed after {max_retries} attempts: {last_error}"
+        f"Speech-to-text failed after {max_retries} attempts. "
+        f"Last error: {last_error}. "
+        "Check your AI_API_KEY and AI_BASE_URL settings in the .env file."
     )

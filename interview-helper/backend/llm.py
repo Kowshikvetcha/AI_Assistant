@@ -324,7 +324,9 @@ async def generate_answer(
             break
 
     raise RuntimeError(
-        f"LLM failed after {max_retries} attempts: {last_error}"
+        f"LLM failed after {max_retries} attempts. "
+        f"Last error: {last_error}. "
+        "Check your AI_API_KEY, AI_BASE_URL, and LLM_MODEL settings in the .env file."
     )
 
 

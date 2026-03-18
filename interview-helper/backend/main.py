@@ -10,8 +10,10 @@ import logging
 import re
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 
 from config import get_settings
 from models import (
@@ -33,6 +35,9 @@ from utils import setup_logging, encode_wav, is_silent, perf_timer
 settings = get_settings()
 logger = setup_logging(settings.LOG_LEVEL)
 manager = ConnectionManager()
+
+# Startup warnings collected during lifespan — sent to each new WS client
+_startup_errors: list[str] = []
 
 # Pipeline state
 _capture_task: asyncio.Task | None = None
@@ -67,12 +72,32 @@ MAX_INCOMPLETE_HOLD_SECONDS = 3.0
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup / shutdown lifecycle."""
+    global _startup_errors
     logger.info("🚀 Interview Helper backend starting...")
     logger.info(f"   Port:  {settings.WEBSOCKET_PORT}")
-    logger.info(f"   Provider: {settings.provider}")
-    logger.info(f"   LLM model: {settings.llm_model}")
-    logger.info(f"   Summary model: {settings.summary_model}")
-    logger.info(f"   STT model: {settings.stt_model}")
+
+    # Validate required configuration up-front so users see clear errors
+    # instead of silent failures buried deep in the pipeline.
+    try:
+        logger.info(f"   Provider: {settings.provider}")
+        logger.info(f"   LLM model: {settings.llm_model}")
+        logger.info(f"   Summary model: {settings.summary_model}")
+        logger.info(f"   STT model: {settings.stt_model}")
+        _ = settings.api_key  # Raises ValueError if missing
+        logger.info("   API key: configured ✓")
+    except ValueError as e:
+        msg = (
+            f"Configuration error: {e}. "
+            "Create a .env file in the project root with AI_API_KEY=your_key. "
+            "See .env.example for all options."
+        )
+        logger.error(f"❌ {msg}")
+        _startup_errors.append(msg)
+    except Exception as e:
+        msg = f"Unexpected startup error: {e}"
+        logger.error(f"❌ {msg}")
+        _startup_errors.append(msg)
+
     yield
     # Shutdown — cancel capture if running
     await stop_capture()
@@ -92,6 +117,25 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ── Global error handlers ─────────────────────────────────────────────
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Unhandled server error on {request.url.path}: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"status": "error", "error": "An unexpected server error occurred. Check the backend logs."},
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    errors = "; ".join(f"{'.'.join(str(l) for l in e['loc'])}: {e['msg']}" for e in exc.errors())
+    return JSONResponse(
+        status_code=422,
+        content={"status": "error", "error": f"Invalid request: {errors}"},
+    )
 
 
 # ── Health ───────────────────────────────────────────────────────────
@@ -202,8 +246,15 @@ async def _audio_producer():
                     pass
             await _audio_queue.put(wav_bytes)
 
+    except asyncio.CancelledError:
+        raise  # Normal shutdown — let it propagate
     except Exception as e:
-        logger.warning(f"Audio producer stopped: {e}")
+        logger.error(f"Audio producer error: {e}")
+        # Broadcast to the UI so users see the real error message
+        await manager.broadcast(
+            ErrorMessage(error=str(e), recoverable=False).model_dump()
+        )
+        _is_capturing = False  # Signal the consumer to stop cleanly
 
 
 async def _audio_consumer():
@@ -463,6 +514,22 @@ async def start_capture():
         logger.info("Capture already running.")
         return
 
+    # Pre-flight: verify API key before starting the pipeline so users get
+    # a clear error immediately instead of silent failures mid-transcription.
+    try:
+        _ = settings.api_key
+    except ValueError as e:
+        await manager.broadcast(
+            ErrorMessage(
+                error=(
+                    f"Cannot start: {e}. "
+                    "Add AI_API_KEY=your_key to the .env file and restart the backend."
+                ),
+                recoverable=False,
+            ).model_dump()
+        )
+        return
+
     _capture_task = asyncio.create_task(processing_pipeline())
     logger.info("▶️  Capture pipeline started.")
 
@@ -495,6 +562,13 @@ async def websocket_endpoint(websocket: WebSocket):
             detail=f"Capturing: {_is_capturing}",
         ).model_dump(),
     )
+
+    # Replay any startup configuration errors so the user sees them immediately
+    for err in _startup_errors:
+        await manager.send_personal(
+            websocket,
+            ErrorMessage(error=err, recoverable=False).model_dump(),
+        )
 
     try:
         while True:

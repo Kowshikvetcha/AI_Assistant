@@ -6,7 +6,8 @@
 
 // ── Configuration ──
 const WS_URL = "ws://localhost:8765/ws";
-const RECONNECT_DELAY_MS = 3000;
+const RECONNECT_DELAY_MIN_MS = 3000;
+const RECONNECT_DELAY_MAX_MS = 30000;
 const MAX_TRANSCRIPT_LINES = 20;
 const BACKEND_URL = "http://localhost:8765";
 
@@ -43,14 +44,16 @@ let ws = null;
 let transcriptLines = [];
 let isCapturing = false;
 let isChatLoading = false;
+let reconnectDelay = RECONNECT_DELAY_MIN_MS;
 
 // ── WebSocket Connection ──
 function connect() {
-    updateStatus("connecting", "Connecting...");
+    updateStatus("connecting", "Connecting to backend...");
 
     ws = new WebSocket(WS_URL);
 
     ws.onopen = () => {
+        reconnectDelay = RECONNECT_DELAY_MIN_MS; // reset backoff on success
         updateStatus("connected", "Connected");
         console.log("[WS] Connected to backend");
         checkResumeStatus();
@@ -66,15 +69,20 @@ function connect() {
     };
 
     ws.onclose = () => {
-        updateStatus("disconnected", "Disconnected");
-        console.log("[WS] Connection closed, reconnecting...");
+        // Reset capturing state so buttons are usable after reconnect
+        setCapturing(false);
+        const delay = reconnectDelay;
+        reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_DELAY_MAX_MS);
+        const secs = Math.round(delay / 1000);
+        updateStatus("disconnected", `Backend offline — retrying in ${secs}s`);
+        console.log(`[WS] Disconnected, retrying in ${secs}s`);
         ws = null;
-        setTimeout(connect, RECONNECT_DELAY_MS);
+        setTimeout(connect, delay);
     };
 
-    ws.onerror = (err) => {
-        updateStatus("error", "Connection error");
-        console.error("[WS] Error:", err);
+    ws.onerror = () => {
+        // onclose always fires after onerror — let it handle the retry logic
+        console.error("[WS] Connection error");
     };
 }
 
@@ -195,10 +203,21 @@ function onStatus(msg) {
 
 // ── Error ──
 function onError(msg) {
-    updateStatus("error", `Error: ${msg.error}`);
+    const recoverable = msg.recoverable !== false;
+    updateStatus("error", `❌ ${msg.error}`);
     console.error("[Backend]", msg.error);
 
-    // Show error briefly, then restore
+    if (!recoverable) {
+        // Show the full error message in the transcript area (it has more space)
+        // so the user can read setup instructions etc.
+        elements.transcript.innerHTML =
+            `<p class="error-message">${escapeHtml(msg.error)}</p>`;
+        setCapturing(false);
+        // Do NOT auto-dismiss — user must read it and take action
+        return;
+    }
+
+    // Recoverable errors: restore status after a short delay
     setTimeout(() => {
         if (isCapturing) {
             updateStatus("capturing", "Capturing...");
