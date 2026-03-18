@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+venv/
+.venv/
+*.egg-info/
+
+# Packaging folder (build scripts — can be recreated)
+packaging/
+
+# PyInstaller / electron-builder build artifacts
+build/
+
+# Frontend dependencies
+frontend/node_modules/
+frontend/package-lock.json
+
+# Environment / secrets
+.env
+
+# Debug audio
+backend/debug_audio/
+
+# Test artifacts
+test_output.txt
+test_results.txt
+.pytest_cache/
+
+# Claude Code internal files
+.claude/

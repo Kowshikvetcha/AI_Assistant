@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Interview Helper</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
+
 <body>
   <div id="app">
     <!-- Title bar (draggable) -->
@@ -25,12 +27,23 @@
       <button id="btn-start" class="ctrl-btn start">▶ Start</button>
       <button id="btn-stop" class="ctrl-btn stop" disabled>⏹ Stop</button>
       <button id="btn-clear" class="ctrl-btn clear">🗑 Clear</button>
+      <button id="btn-clear-memory" class="ctrl-btn clear-memory">🧹 Clear Memory</button>
       <div id="status-indicator">
         <span class="status-dot" id="status-dot"></span>
         <span id="status-text">Disconnected</span>
       </div>
     </div>
 
+    <!-- Resume Upload -->
+    <div id="resume-row">
+      <button id="btn-resume" class="ctrl-btn resume">📄 Upload Resume</button>
+      <span id="resume-status" class="resume-status">No resume loaded</span>
+    </div>
+    <!-- Manual Chat -->
+    <div id="chat-row">
+      <input id="chat-input" type="text" placeholder="Type your interview question..." autocomplete="off" />
+      <button id="btn-chat-send" class="ctrl-btn chat-send">Send</button>
+    </div>
     <!-- Live Transcript -->
     <section id="section-transcript" class="section">
       <h3 class="section-title">🎙 Live Transcript</h3>
@@ -58,7 +71,8 @@
     <!-- Code Example -->
     <section id="section-code" class="section">
       <h3 class="section-title">💻 Code</h3>
-      <pre id="code-content" class="section-body scrollable code-block"><code class="placeholder">Code snippets will appear here</code></pre>
+      <pre id="code-content"
+        class="section-body scrollable code-block"><code class="placeholder">Code snippets will appear here</code></pre>
     </section>
 
     <!-- Follow-up -->
@@ -66,6 +80,15 @@
       <h3 class="section-title">🔮 Possible Follow-up</h3>
       <div id="followup-content" class="section-body">
         <p class="placeholder">—</p>
+      </div>
+    </section>
+
+
+    <!-- Debug: Latest Question Sent To LLM -->
+    <section id="section-debug-question" class="section">
+      <h3 class="section-title">Latest Question Sent</h3>
+      <div id="debug-question-content" class="section-body scrollable">
+        <p class="placeholder">Waiting for first LLM call...</p>
       </div>
     </section>
 
@@ -79,4 +102,10 @@
 
   <script src="renderer.js"></script>
 </body>
+
 </html>
+
+
+
+
+

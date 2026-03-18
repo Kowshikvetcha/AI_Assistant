@@ -25,7 +25,8 @@
   --radius-sm: 8px;
 }
 
-html, body {
+html,
+body {
   height: 100%;
   overflow: hidden;
   background: transparent;
@@ -47,7 +48,7 @@ html, body {
   -webkit-backdrop-filter: blur(24px);
   overflow: hidden;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6),
-              0 0 0 1px rgba(100, 100, 180, 0.1);
+    0 0 0 1px rgba(100, 100, 180, 0.1);
 }
 
 /* ── Title Bar ── */
@@ -163,6 +164,76 @@ html, body {
   box-shadow: 0 0 8px rgba(248, 113, 113, 0.2);
 }
 
+/* ── Resume Upload Row ── */
+#resume-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px 8px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.ctrl-btn.resume {
+  font-size: 11px;
+  padding: 4px 10px;
+}
+
+.ctrl-btn.resume:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+
+.resume-status {
+  font-size: 11px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 260px;
+}
+
+.resume-status.loaded {
+  color: var(--green);
+}
+
+/* Chat Row */
+#chat-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px 8px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+#chat-input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: rgba(20, 20, 40, 0.5);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: 'Inter', sans-serif;
+  outline: none;
+}
+
+#chat-input::placeholder {
+  color: var(--text-dim);
+}
+
+#chat-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+
+.ctrl-btn.chat-send {
+  font-size: 11px;
+  padding: 5px 10px;
+}
+
 #status-indicator {
   margin-left: auto;
   display: flex;
@@ -197,8 +268,15 @@ html, body {
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.4;
+  }
 }
 
 /* ── Sections ── */
@@ -206,6 +284,7 @@ html, body {
   padding: 8px 12px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+  overflow: hidden;
 }
 
 .section-title {
@@ -251,7 +330,7 @@ html, body {
 
 /* ── Transcript ── */
 #section-transcript {
-  flex-shrink: 1;
+  flex-shrink: 0;
   min-height: 60px;
 }
 
@@ -303,7 +382,8 @@ html, body {
 }
 
 #section-code {
-  display: none; /* Hidden until code is available */
+  display: none;
+  /* Hidden until code is available */
 }
 
 #section-code.visible {
@@ -342,8 +422,15 @@ html, body {
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* ── Responsive ── */
@@ -351,6 +438,18 @@ html, body {
   min-height: 400px;
 }
 
-.section-body p, .section-body li {
+.section-body p,
+.section-body li {
   word-break: break-word;
+}
+
+/* ── Error message (non-recoverable, shown in transcript area) ── */
+.error-message {
+  color: var(--red);
+  font-size: 11px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-left: 2px solid var(--red);
+  padding-left: 8px;
 }

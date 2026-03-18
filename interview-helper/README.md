@@ -37,75 +37,139 @@ System Audio (WASAPI Loopback)
 
 ---
 
-## Prerequisites
+## 🚀 Quick Start (30 seconds)
 
-- **Python 3.10+**
-- **Node.js 18+** and **npm**
-- **Windows** (for WASAPI loopback audio capture)
-- **OpenAI API Key** with access to Whisper and GPT-4o
+```bash
+# 1. Create and activate Python 3.10/3.13 virtual environment
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+
+# 2. Copy and configure .env
+copy .env.example .env
+# Edit .env and set your API key/model values
+
+# 3. Install backend + frontend dependencies
+cd backend && pip install -r requirements.txt && cd ..
+cd frontend && npm install && cd ..
+
+# 4. Start in two terminals
+# Terminal 1:
+cd backend && python main.py
+
+# Terminal 2:
+cd frontend && npm start
+```
 
 ---
 
-## Setup
+## Prerequisites
 
-### 1. Clone & Configure
+- **Python 3.10 or 3.13** (⚠️ NOT 3.14 — compatibility issues with pydantic-core)
+- **Node.js 18+** and **npm**
+- **Windows** (for WASAPI loopback audio capture)
+- **API key** for your configured provider/model stack
+- **Rust** (automatically installed with Python dependencies if needed)
+
+---
+
+## Installation Guide
+
+### Step 1: Clone Repository
 
 ```bash
+git clone <repo-url>
 cd interview-helper
+```
+
+### Step 2: Create Virtual Environment
+
+Create a Python 3.10/3.13 virtual environment in the project root:
+
+```bash
+# Using Python 3.10 (replace with py or python3.10 if needed)
+python -m venv venv
+
+# Activate virtual environment
+# On Windows PowerShell:
+.\venv\Scripts\Activate.ps1
+# On Windows CMD:
+.\venv\Scripts\activate.bat
+```
+
+### Step 3: Configure Environment Variables
+
+Create a `.env` file in the `interview-helper/` directory (NOT the root):
+
+```bash
+# Copy the template
 copy .env.example .env
 ```
 
-Edit `.env` and set your OpenAI API key:
+Edit `.env` and set your API key/models:
 
 ```
-OPENAI_API_KEY=sk-your-actual-key-here
+AI_PROVIDER=openai
+AI_API_KEY=sk-your-actual-key-here
+# Optional for OpenAI-compatible providers:
+# AI_BASE_URL=https://api.openai.com/v1
+WEBSOCKET_PORT=8765
+# Optional model overrides (leave empty for provider defaults)
+LLM_MODEL=
+SUMMARY_MODEL=
+STT_MODEL=
+LLM_MAX_TOKENS=1024
+AUDIO_CHUNK_DURATION=2
+LOG_LEVEL=INFO
 ```
 
-### 2. Backend Setup
+### Step 4: Install Backend Dependencies
 
 ```bash
+# Make sure virtual environment is activated
 cd backend
 
-# Create and activate virtual environment (already created at ../venv)
-..\venv\Scripts\activate
-
-# Install dependencies
+# Install Python dependencies
 pip install -r requirements.txt
+
+# (If you encounter Rust compilation errors, ensure Rust is installed)
+# Download from: https://rustup.rs/
 ```
 
-### 3. Frontend Setup
+### Step 5: Install Frontend Dependencies
 
 ```bash
-cd frontend
+cd ../frontend
 npm install
 ```
 
 ---
 
-## Running
+## Running the Application
 
-### Start Backend
+### Terminal 1: Start the Backend
 
 ```bash
+# From project root, make sure venv is activated
+.\venv\Scripts\Activate.ps1
+
 cd backend
-..\venv\Scripts\activate
 python main.py
 ```
 
-The backend starts on `http://localhost:8765`. Verify with:
-
+You should see:
 ```
-GET http://localhost:8765/health
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8765 (Press CTRL+C to quit)
 ```
 
-### Start Frontend
+### Terminal 2: Start the Frontend
 
 ```bash
 cd frontend
 npm start
 ```
 
-The Electron overlay window appears on screen.
+The Electron overlay window appears on screen. The frontend automatically connects to the backend on `localhost:8765`.
 
 ---
 
@@ -155,9 +219,10 @@ interview-helper/
 ## Running Tests
 
 ```bash
+# From project root
+.\venv\Scripts\Activate.ps1
+
 cd backend
-..\venv\Scripts\activate
-pip install pytest pytest-asyncio
 python -m pytest tests/ -v
 ```
 
@@ -169,12 +234,84 @@ Tests mock all OpenAI API calls — no API key required.
 
 | Variable | Default | Description |
 |---|---|---|
-| `OPENAI_API_KEY` | — | Required. Your OpenAI API key |
+| `AI_PROVIDER` | `openai` | Provider label (for config clarity/logging) |
+| `AI_API_KEY` | — | Preferred API key variable |
+| `AI_BASE_URL` | — | Optional base URL for OpenAI-compatible providers |
+| `OPENAI_API_KEY` | — | Legacy fallback key variable |
 | `WEBSOCKET_PORT` | `8765` | Backend WebSocket port |
 | `AUDIO_CHUNK_DURATION` | `2` | Audio chunk length in seconds |
-| `LLM_MODEL` | `gpt-4o` | OpenAI model name |
+| `LLM_MODEL` | provider default | Main answer model override |
+| `SUMMARY_MODEL` | provider default | Transcript summary model override |
+| `STT_MODEL` | provider default | Speech-to-text model override |
 | `LLM_MAX_TOKENS` | `1024` | Max response tokens |
 | `LOG_LEVEL` | `INFO` | Logging level |
+
+Provider presets (OpenAI-compatible): `openai`, `openrouter`, `groq`, `together`, `fireworks`, `deepseek`, `ollama`.
+
+---
+
+## Troubleshooting
+
+### ❌ `Missing API key. Set AI_API_KEY (or OPENAI_API_KEY).`
+
+**Cause:** `.env` file not found or in wrong location.
+
+**Solution:** 
+- Ensure `.env` is in the `interview-helper/` directory (not root)
+- Verify it contains either: `AI_API_KEY=...` or `OPENAI_API_KEY=...`
+- Restart the backend after creating `.env`
+
+### ❌ `Port 8765 already in use`
+
+**Cause:** Backend is already running or a previous instance wasn't properly stopped.
+
+**Solution:**
+```bash
+# Kill the process using port 8765
+netstat -ano | findstr 8765
+taskkill /PID <PID> /F
+
+# Or change the port in .env
+WEBSOCKET_PORT=8766
+```
+
+### ❌ `pydantic-core build errors / PyO3 compilation fails`
+
+**Cause:** Using Python 3.14, which is too new for current pydantic-core.
+
+**Solution:**
+- Ensure you're using **Python 3.10 or 3.13**
+- Delete the old venv: `Remove-Item -Recurse venv`
+- Recreate with Python 3.10: `python3.10 -m venv venv`
+- Reinstall dependencies
+
+### ❌ `Rust not found` when installing dependencies
+
+**Cause:** Rust toolchain not installed.
+
+**Solution:**
+- Download and install from: https://rustup.rs/
+- It will set up Rust automatically
+- After installation, restart your terminal and retry `pip install -r requirements.txt`
+
+### ❌ Frontend won't connect to backend
+
+**Cause:** Backend not running or wrong port/host.
+
+**Solution:**
+1. Verify backend is running: `netstat -ano | findstr 8765`
+2. Check browser console in frontend for errors
+3. Verify `.env` has correct `WEBSOCKET_PORT`
+4. Ensure firewall isn't blocking localhost connections
+
+### ❌ Audio not being captured
+
+**Cause:** WASAPI loopback not enabled or wrong audio device.
+
+**Solution:**
+1. Ensure you have system audio loopback enabled (varies by audio driver)
+2. Try with playing system audio (YouTube, Spotify, etc.)
+3. Check `LOG_LEVEL=DEBUG` in `.env` for detailed audio capture logs
 
 ---
 

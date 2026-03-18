@@ -30,6 +30,52 @@ if not hasattr(np, "_original_fromstring"):
 logger = logging.getLogger("interview_helper")
 
 
+def _find_capture_device(sc):
+    """Find the best available system-audio loopback device.
+
+    Priority:
+      1. WASAPI loopback on the default speaker (captures Zoom/Meet/Teams audio)
+      2. Any available loopback device (e.g. Stereo Mix, VB-Cable)
+
+    Raises RuntimeError with setup instructions if no loopback device exists.
+    """
+    # 1. Try default speaker loopback
+    try:
+        speaker = sc.default_speaker()
+        if speaker:
+            mic = sc.get_microphone(id=str(speaker.id), include_loopback=True)
+            logger.info(f"🎧 Loopback capture from default speaker: {speaker.name}")
+            return mic
+    except Exception as e:
+        logger.warning(f"Default speaker loopback unavailable: {e}")
+
+    # 2. Try any loopback device available on the system
+    try:
+        for m in sc.all_microphones(include_loopback=True):
+            if "loopback" in m.name.lower():
+                logger.info(f"🎧 Loopback capture from: {m.name}")
+                return m
+    except Exception as e:
+        logger.warning(f"Loopback device enumeration failed: {e}")
+
+    # No loopback device found — raise a clear, actionable error
+    raise RuntimeError(
+        "No system audio loopback device found on this machine.\n"
+        "\n"
+        "To fix this, do ONE of the following:\n"
+        "  1. Enable 'Stereo Mix' in Windows:\n"
+        "     Right-click the speaker icon → Sounds → Recording tab\n"
+        "     → right-click empty area → Show Disabled Devices\n"
+        "     → right-click 'Stereo Mix' → Enable\n"
+        "\n"
+        "  2. Install VB-Audio Virtual Cable (free):\n"
+        "     https://vb-audio.com/Cable\n"
+        "     Then set it as your default playback device.\n"
+        "\n"
+        "  3. Update your audio driver — some drivers disable loopback by default."
+    )
+
+
 async def capture_system_audio(
     chunk_duration: float = 2.0,
     sample_rate: int = 48000,
@@ -38,6 +84,9 @@ async def capture_system_audio(
 
     Uses WASAPI loopback to capture what is playing through the default
     speakers / headphones (i.e. the interviewer's voice on Zoom/Meet/Teams).
+
+    Tries stereo (2ch) first; automatically falls back to mono (1ch) if the
+    device does not support stereo — without opening the device twice.
 
     Args:
         chunk_duration: Length of each audio chunk in seconds.
@@ -49,52 +98,48 @@ async def capture_system_audio(
     try:
         import soundcard as sc
     except ImportError:
-        logger.error(
-            "soundcard is not installed. Run: pip install soundcard"
-        )
+        logger.error("soundcard is not installed. Run: pip install soundcard")
         raise
 
-    # Get default speaker for loopback recording
-    try:
-        default_speaker = sc.default_speaker()
-        if default_speaker is None:
-            raise RuntimeError("No default speaker found")
-        logger.info(
-            f"🎧 Capturing loopback audio from: {default_speaker.name}"
-        )
-    except Exception as e:
-        logger.error(f"Failed to get default speaker: {e}")
-        raise RuntimeError(
-            f"Cannot access system audio device: {e}"
-        ) from e
-
+    mic = _find_capture_device(sc)
     num_frames = int(sample_rate * chunk_duration)
 
-    # Use loopback recording (records what the speaker is outputting)
-    try:
-        mic = sc.get_microphone(
-            id=str(default_speaker.id), include_loopback=True
-        )
-    except Exception as e:
-        logger.error(f"Failed to open loopback microphone: {e}")
-        raise RuntimeError(
-            f"Cannot open loopback capture: {e}. "
-            "Ensure you are on Windows with WASAPI support."
-        ) from e
+    # Open the recorder — try stereo first, fall back to mono.
+    # We manage the context manager manually so we only open the device once.
+    recorder_ctx = None
+    recorder = None
+    for channels in (2, 1):
+        try:
+            recorder_ctx = mic.recorder(samplerate=sample_rate, channels=channels)
+            recorder = recorder_ctx.__enter__()
+            logger.info(
+                f"🎙  Recording: {sample_rate}Hz, {channels}ch, "
+                f"{chunk_duration}s chunks ({num_frames} frames)"
+            )
+            break
+        except Exception as e:
+            if channels == 2:
+                logger.warning(f"Stereo not supported ({e}), retrying in mono...")
+                recorder_ctx = None
+                continue
+            raise RuntimeError(
+                f"Cannot open audio recorder on '{mic.name}': {e}.\n"
+                "Try closing other apps that use audio, or check your audio driver settings."
+            ) from e
 
-    logger.info(
-        f"🎙  Recording config: {sample_rate}Hz, "
-        f"chunk={chunk_duration}s ({num_frames} frames)"
-    )
-
     try:
-        with mic.recorder(samplerate=sample_rate, channels=2) as recorder:
-            while True:
-                # Record in a thread to avoid blocking the event loop
-                audio_data = await asyncio.to_thread(
-                    recorder.record, numframes=num_frames
-                )
-                yield audio_data.astype(np.float32)
+        while True:
+            # Record in a thread to avoid blocking the event loop
+            audio_data = await asyncio.to_thread(
+                recorder.record, numframes=num_frames
+            )
+            yield audio_data.astype(np.float32)
     except Exception as e:
         logger.warning(f"Audio capture stopped: {e}")
         raise
+    finally:
+        if recorder_ctx is not None:
+            try:
+                recorder_ctx.__exit__(None, None, None)
+            except Exception:
+                pass

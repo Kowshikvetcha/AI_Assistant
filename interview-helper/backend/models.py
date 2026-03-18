@@ -36,6 +36,9 @@ class LLMResponse(BaseModel):
     followup_question: str = Field(
         "", description="Suggested follow-up question"
     )
+    latest_question_input: str = Field(
+        "", description="Debug: latest question text sent to the LLM"
+    )
     latency_ms: float = Field(0.0, description="LLM processing latency in ms")
     tokens_used: int = Field(0, description="Total tokens consumed")
 
@@ -67,3 +70,8 @@ class PerformanceMetrics(BaseModel):
     total_latency_ms: float = 0.0
     tokens_used: int = 0
     timestamp: float = 0.0
+
+
+class ChatRequest(BaseModel):
+    """Manual chat request from the UI."""
+    question: str = Field(..., min_length=1, description="User question text")

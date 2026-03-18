@@ -6,8 +6,10 @@
 
 // ── Configuration ──
 const WS_URL = "ws://localhost:8765/ws";
-const RECONNECT_DELAY_MS = 3000;
+const RECONNECT_DELAY_MIN_MS = 3000;
+const RECONNECT_DELAY_MAX_MS = 30000;
 const MAX_TRANSCRIPT_LINES = 20;
+const BACKEND_URL = "http://localhost:8765";
 
 // ── DOM Elements ──
 const $ = (id) => document.getElementById(id);
@@ -16,8 +18,13 @@ const elements = {
     btnStart: $("btn-start"),
     btnStop: $("btn-stop"),
     btnClear: $("btn-clear"),
+    btnClearMemory: $("btn-clear-memory"),
     btnMinimize: $("btn-minimize"),
     btnClose: $("btn-close"),
+    btnResume: $("btn-resume"),
+    chatInput: $("chat-input"),
+    btnChatSend: $("btn-chat-send"),
+    resumeStatus: $("resume-status"),
     statusDot: $("status-dot"),
     statusText: $("status-text"),
     transcript: $("transcript-content"),
@@ -26,6 +33,7 @@ const elements = {
     codeSection: $("section-code"),
     code: $("code-content"),
     followup: $("followup-content"),
+    debugQuestion: $("debug-question-content"),
     perfStt: $("perf-stt"),
     perfLlm: $("perf-llm"),
     perfTokens: $("perf-tokens"),
@@ -35,16 +43,20 @@ const elements = {
 let ws = null;
 let transcriptLines = [];
 let isCapturing = false;
+let isChatLoading = false;
+let reconnectDelay = RECONNECT_DELAY_MIN_MS;
 
 // ── WebSocket Connection ──
 function connect() {
-    updateStatus("connecting", "Connecting...");
+    updateStatus("connecting", "Connecting to backend...");
 
     ws = new WebSocket(WS_URL);
 
     ws.onopen = () => {
+        reconnectDelay = RECONNECT_DELAY_MIN_MS; // reset backoff on success
         updateStatus("connected", "Connected");
         console.log("[WS] Connected to backend");
+        checkResumeStatus();
     };
 
     ws.onmessage = (event) => {
@@ -57,15 +69,20 @@ function connect() {
     };
 
     ws.onclose = () => {
-        updateStatus("disconnected", "Disconnected");
-        console.log("[WS] Connection closed, reconnecting...");
+        // Reset capturing state so buttons are usable after reconnect
+        setCapturing(false);
+        const delay = reconnectDelay;
+        reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_DELAY_MAX_MS);
+        const secs = Math.round(delay / 1000);
+        updateStatus("disconnected", `Backend offline — retrying in ${secs}s`);
+        console.log(`[WS] Disconnected, retrying in ${secs}s`);
         ws = null;
-        setTimeout(connect, RECONNECT_DELAY_MS);
+        setTimeout(connect, delay);
     };
 
-    ws.onerror = (err) => {
-        updateStatus("error", "Connection error");
-        console.error("[WS] Error:", err);
+    ws.onerror = () => {
+        // onclose always fires after onerror — let it handle the retry logic
+        console.error("[WS] Connection error");
     };
 }
 
@@ -141,6 +158,11 @@ function onLLMResponse(msg) {
             msg.followup_question
         )}</p>`;
     }
+    if (msg.latest_question_input) {
+        elements.debugQuestion.innerHTML = `<p class="fade-in">${escapeHtml(
+            msg.latest_question_input
+        )}</p>`;
+    }
 
     // Performance
     if (msg.latency_ms) {
@@ -168,6 +190,12 @@ function onStatus(msg) {
         case "cleared":
             clearUI();
             break;
+        case "resume_loaded":
+            updateResumeStatus(msg.detail || "Resume loaded", true);
+            break;
+        case "memory_cleared":
+            updateStatus("connected", msg.detail || "Memory cleared");
+            break;
         default:
             updateStatus("connected", msg.status);
     }
@@ -175,10 +203,21 @@ function onStatus(msg) {
 
 // ── Error ──
 function onError(msg) {
-    updateStatus("error", `Error: ${msg.error}`);
+    const recoverable = msg.recoverable !== false;
+    updateStatus("error", `❌ ${msg.error}`);
     console.error("[Backend]", msg.error);
 
-    // Show error briefly, then restore
+    if (!recoverable) {
+        // Show the full error message in the transcript area (it has more space)
+        // so the user can read setup instructions etc.
+        elements.transcript.innerHTML =
+            `<p class="error-message">${escapeHtml(msg.error)}</p>`;
+        setCapturing(false);
+        // Do NOT auto-dismiss — user must read it and take action
+        return;
+    }
+
+    // Recoverable errors: restore status after a short delay
     setTimeout(() => {
         if (isCapturing) {
             updateStatus("capturing", "Capturing...");
@@ -208,6 +247,7 @@ function clearUI() {
     elements.codeSection.classList.remove("visible");
     elements.code.innerHTML = '<code class="placeholder">Code snippets will appear here</code>';
     elements.followup.innerHTML = '<p class="placeholder">—</p>';
+    elements.debugQuestion.innerHTML = '<p class="placeholder">Waiting for first LLM call...</p>';
     elements.perfStt.textContent = "STT: —";
     elements.perfLlm.textContent = "LLM: —";
     elements.perfTokens.textContent = "Tokens: —";
@@ -233,6 +273,10 @@ elements.btnClear.addEventListener("click", () => {
     sendControl("clear");
     clearUI();
 });
+elements.btnClearMemory.addEventListener("click", () => {
+    updateStatus("connected", "Clearing memory...");
+    sendControl("clear_memory");
+});
 
 // Window controls via preload bridge
 elements.btnMinimize.addEventListener("click", () => {
@@ -243,5 +287,127 @@ elements.btnClose.addEventListener("click", () => {
     if (window.electronAPI) window.electronAPI.closeWindow();
 });
 
+// ── Resume Upload ──
+elements.btnResume.addEventListener("click", async () => {
+    if (!window.electronAPI) {
+        console.error("[Resume] electronAPI not available");
+        return;
+    }
+
+    try {
+        updateResumeStatus("Selecting file...", false);
+        const fileData = await window.electronAPI.selectResumeFile();
+
+        if (!fileData) {
+            updateResumeStatus("No resume loaded", false);
+            return;
+        }
+
+        updateResumeStatus("Uploading...", false);
+
+        // Convert base64 back to binary and create FormData
+        const byteChars = atob(fileData.buffer);
+        const byteArray = new Uint8Array(byteChars.length);
+        for (let i = 0; i < byteChars.length; i++) {
+            byteArray[i] = byteChars.charCodeAt(i);
+        }
+        const blob = new Blob([byteArray]);
+
+        const formData = new FormData();
+        formData.append("file", blob, fileData.name);
+
+        const response = await fetch(`${BACKEND_URL}/upload-resume`, {
+            method: "POST",
+            body: formData,
+        });
+
+        const result = await response.json();
+
+        if (result.status === "ok") {
+            updateResumeStatus(`✅ ${result.filename}`, true);
+            console.log(`[Resume] Loaded: ${result.filename} (${result.chars} chars)`);
+        } else {
+            updateResumeStatus(`❌ ${result.error}`, false);
+            console.error("[Resume] Upload error:", result.error);
+        }
+    } catch (err) {
+        updateResumeStatus("❌ Upload failed", false);
+        console.error("[Resume] Error:", err);
+    }
+});
+
+function updateResumeStatus(text, loaded) {
+    elements.resumeStatus.textContent = text;
+    elements.resumeStatus.className = loaded
+        ? "resume-status loaded"
+        : "resume-status";
+}
+
+async function checkResumeStatus() {
+    try {
+        const response = await fetch(`${BACKEND_URL}/resume-status`);
+        const data = await response.json();
+        if (data.loaded) {
+            updateResumeStatus(`✅ ${data.filename}`, true);
+        }
+    } catch (err) {
+        console.log("[Resume] Could not check resume status:", err.message);
+    }
+}
+
 // ── Initialize ──
+function setChatLoading(loading) {
+    isChatLoading = loading;
+    elements.chatInput.disabled = loading;
+    elements.btnChatSend.disabled = loading;
+    elements.btnChatSend.textContent = loading ? "..." : "Send";
+}
+
+async function sendChatQuestion() {
+    if (isChatLoading) return;
+
+    const question = elements.chatInput.value.trim();
+    if (!question) return;
+
+    setChatLoading(true);
+    updateStatus("connected", "Thinking...");
+
+    try {
+        const response = await fetch(`${BACKEND_URL}/chat`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ question }),
+        });
+
+        const result = await response.json();
+        if (result.type === "llm_response") {
+            onLLMResponse(result);
+            elements.chatInput.value = "";
+            updateStatus(
+                isCapturing ? "capturing" : "connected",
+                isCapturing ? "Capturing..." : "Connected"
+            );
+            return;
+        }
+
+        throw new Error(result.error || "Chat request failed");
+    } catch (err) {
+        onError({ error: err.message || "Chat request failed" });
+    } finally {
+        setChatLoading(false);
+    }
+}
+
+elements.btnChatSend.addEventListener("click", sendChatQuestion);
+elements.chatInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+        event.preventDefault();
+        sendChatQuestion();
+    }
+});
 connect();
+
+
+
+
+
