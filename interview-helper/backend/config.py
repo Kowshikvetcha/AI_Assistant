@@ -29,7 +29,7 @@ PROVIDER_PRESETS = {
     },
     "groq": {
         "base_url": "https://api.groq.com/openai/v1",
-        "llm_model": "llama-3.1-8b-instant",
+        "llm_model": "openai/gpt-oss-120b",
         "summary_model": "llama-3.1-8b-instant",
         "stt_model": "whisper-large-v3",
     },
