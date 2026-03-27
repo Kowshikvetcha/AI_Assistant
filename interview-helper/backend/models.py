@@ -27,6 +27,9 @@ class TranscriptMessage(BaseModel):
 class LLMResponse(BaseModel):
     """Structured LLM answer for interview questions."""
     type: MessageType = MessageType.LLM_RESPONSE
+    corrected_question: str = Field(
+        "", description="The question as the LLM understood it, with STT errors corrected"
+    )
     summary: str = Field("", description="Brief summary of the answer")
     direct_answer: str = Field("", description="Direct, concise answer")
     bullet_points: list[str] = Field(

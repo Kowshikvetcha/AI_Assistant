@@ -18,8 +18,30 @@ settings = get_settings()
 
 SYSTEM_PROMPT = """You are a technical interview copilot. Your job is to produce accurate, concise, interview-ready answers.
 
+IMPORTANT — Speech-to-text input:
+The questions you receive are transcribed from live audio using speech-to-text. The transcription is often imperfect — expect misspellings, phonetic errors, missing or swapped words, and garbled technical terms. You MUST:
+- Infer the actual intended question from the noisy transcription before answering.
+- If a word does not make sense literally, consider what it sounds like spoken aloud and pick the most plausible technical term.
+- Use the surrounding context (interview topic, other words in the sentence) to disambiguate.
+- Silently correct obvious STT errors — do NOT point them out or comment on transcription quality.
+
+Common STT misheard technical terms (not exhaustive — apply this reasoning broadly):
+  "cash" / "kash" → cache, "sequel" → SQL, "pie torch" / "pie tors" → PyTorch,
+  "tensor flow" → TensorFlow, "kuber netties" / "kuber net ease" → Kubernetes,
+  "post gress" / "post gray" → PostgreSQL, "no JS" / "know JS" → Node.js,
+  "react native" vs "react natively", "mongo db" → MongoDB, "redis" / "red is" → Redis,
+  "doc er" / "docker" → Docker, "get hub" → GitHub, "J query" → jQuery,
+  "next JS" / "next yes" → Next.js, "type script" → TypeScript, "my sequel" → MySQL,
+  "sass" → SaaS or Sass (use context), "lambda" / "lam da" → Lambda,
+  "dynamo db" / "dynamo" → DynamoDB, "es six" / "ES six" → ES6,
+  "GPT for" / "GPT for all" → GPT-4, "LLM" / "elm" → LLM,
+  "RAG" / "rag" → RAG (Retrieval-Augmented Generation),
+  "fine tune" / "fine-tune", "embedding" / "in bedding" → embedding,
+  "transformer" / "trans former", "API" / "a pie" → API.
+
 You MUST output valid JSON with exactly this schema:
 {
+  "corrected_question": "The question as you understood it, with STT errors corrected",
   "summary": "One-line summary of the question",
   "direct_answer": "Clear spoken answer (2-4 sentences)",
   "bullet_points": ["Key point 1", "Key point 2", "Key point 3"],
@@ -28,6 +50,7 @@ You MUST output valid JSON with exactly this schema:
 }
 
 Behavior rules:
+- First, reconstruct the intended question in corrected_question. Then answer THAT corrected version.
 - Primary objective: answer the latest question first and in the most detail.
 - Treat any older interview context as low-priority background only.
 - If older context conflicts with the latest question, prioritize the latest question.
@@ -83,6 +106,7 @@ Do NOT include filler or repetition. Output ONLY the summary text, no JSON."""
 JSON_REPAIR_PROMPT = """You repair malformed model output into valid JSON.
 
 Return ONLY a valid JSON object with exactly these keys:
+- corrected_question (string)
 - summary (string)
 - direct_answer (string)
 - bullet_points (array of strings)
@@ -134,6 +158,7 @@ def _fallback_payload_from_text(raw: str) -> dict:
     """Final fallback payload when parsing/repair both fail."""
     text = raw.strip()
     return {
+        "corrected_question": "",
         "summary": "",
         "direct_answer": text[:500],
         "bullet_points": [],
@@ -150,6 +175,7 @@ def _normalize_payload(payload: dict) -> dict:
     bullets = [str(b).strip() for b in bullets if str(b).strip()]
 
     return {
+        "corrected_question": str(payload.get("corrected_question", "")).strip(),
         "summary": str(payload.get("summary", "")).strip(),
         "direct_answer": str(payload.get("direct_answer", "")).strip(),
         "bullet_points": bullets,
@@ -249,7 +275,7 @@ async def generate_answer(
         user_content += f"[Older interview summary - low priority]\n{interview_summary}\n\n"
     if supporting_context:
         user_content += f"[Recent supporting context - medium priority]\n{supporting_context}\n\n"
-    user_content += f"[Latest question - highest priority]\n{latest_question}"
+    user_content += f"[Latest question - highest priority - transcribed from speech, may contain errors]\n{latest_question}"
 
     for attempt in range(1, max_retries + 1):
         try:
@@ -278,6 +304,7 @@ async def generate_answer(
                 parsed = _fallback_payload_from_text(raw_content)
             parsed = _normalize_payload(parsed)
             llm_response = LLMResponse(
+                corrected_question=parsed.get("corrected_question", ""),
                 summary=parsed.get("summary", ""),
                 direct_answer=parsed.get("direct_answer", ""),
                 bullet_points=parsed.get("bullet_points", []),

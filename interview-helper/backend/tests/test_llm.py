@@ -25,6 +25,7 @@ def reset_client():
 
 
 VALID_LLM_JSON = json.dumps({
+    "corrected_question": "What is a Python decorator?",
     "summary": "Explains Python decorators",
     "direct_answer": "A decorator is a function that takes another function and extends its behavior.",
     "bullet_points": [
@@ -166,7 +167,6 @@ def test_parse_llm_json_with_fences():
 
 
 def test_parse_llm_json_invalid():
-    """Test fallback on invalid JSON."""
+    """Test that invalid JSON returns None (caller handles fallback)."""
     result = _parse_llm_json("not valid json at all")
-    assert result["direct_answer"] == "not valid json at all"
-    assert result["bullet_points"] == []
+    assert result is None
