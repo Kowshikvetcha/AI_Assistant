@@ -19,6 +19,7 @@ const elements = {
     btnStop: $("btn-stop"),
     btnClear: $("btn-clear"),
     btnClearMemory: $("btn-clear-memory"),
+    btnCapture: $("btn-capture"),
     btnMinimize: $("btn-minimize"),
     btnClose: $("btn-close"),
     btnResume: $("btn-resume"),
@@ -44,6 +45,7 @@ let ws = null;
 let transcriptLines = [];
 let isCapturing = false;
 let isChatLoading = false;
+let isCaptureLoading = false;
 let reconnectDelay = RECONNECT_DELAY_MIN_MS;
 
 // ── WebSocket Connection ──
@@ -405,6 +407,78 @@ elements.chatInput.addEventListener("keydown", (event) => {
         sendChatQuestion();
     }
 });
+
+// ── Screen Capture ──
+function setCaptureLoading(loading) {
+    isCaptureLoading = loading;
+    elements.btnCapture.disabled = loading;
+    elements.btnCapture.textContent = loading ? "..." : "📸 Capture";
+}
+
+async function captureScreen() {
+    if (isCaptureLoading) return;
+    if (!window.electronAPI || !window.electronAPI.captureScreen) {
+        console.error("[Capture] electronAPI.captureScreen not available");
+        return;
+    }
+
+    setCaptureLoading(true);
+    updateStatus("connected", "Capturing...");
+
+    try {
+        const base64Image = await window.electronAPI.captureScreen();
+
+        if (!base64Image) {
+            // User cancelled the selection
+            updateStatus(
+                isCapturing ? "capturing" : "connected",
+                isCapturing ? "Capturing..." : "Connected"
+            );
+            return;
+        }
+
+        updateStatus("connected", "Processing OCR...");
+
+        const response = await fetch(`${BACKEND_URL}/capture-screen`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ image: base64Image }),
+        });
+
+        const result = await response.json();
+
+        if (result.status === "ok" && result.text) {
+            // Place OCR text in the chat input for user review/edit
+            elements.chatInput.value = result.text;
+            elements.chatInput.focus();
+            updateStatus(
+                isCapturing ? "capturing" : "connected",
+                "OCR done — review and hit Send"
+            );
+            return;
+        }
+
+        if (result.status === "error") {
+            throw new Error(result.error || "Screen capture failed");
+        }
+
+        throw new Error("Unexpected response from capture endpoint");
+    } catch (err) {
+        onError({ error: err.message || "Screen capture failed" });
+    } finally {
+        setCaptureLoading(false);
+    }
+}
+
+elements.btnCapture.addEventListener("click", captureScreen);
+
+// Listen for hotkey trigger from main process
+if (window.electronAPI && window.electronAPI.onTriggerScreenCapture) {
+    window.electronAPI.onTriggerScreenCapture(() => {
+        captureScreen();
+    });
+}
+
 connect();
 
 

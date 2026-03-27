@@ -164,6 +164,11 @@ body {
   box-shadow: 0 0 8px rgba(248, 113, 113, 0.2);
 }
 
+.ctrl-btn.capture:hover:not(:disabled) {
+  border-color: var(--yellow);
+  box-shadow: 0 0 8px rgba(251, 191, 36, 0.25);
+}
+
 /* ── Resume Upload Row ── */
 #resume-row {
   display: flex;

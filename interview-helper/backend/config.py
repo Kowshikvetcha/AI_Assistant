@@ -101,6 +101,11 @@ class Settings(BaseSettings):
     # Logging
     LOG_LEVEL: str = Field("INFO", description="Logging level")
 
+    # OCR (Tesseract)
+    TESSERACT_CMD: Optional[str] = Field(
+        None, description="Path to Tesseract executable (auto-detected if on PATH)"
+    )
+
     model_config = {
         "env_file": str(ENV_PATH),
         "env_file_encoding": "utf-8",

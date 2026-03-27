@@ -23,12 +23,14 @@ from models import (
     PerformanceMetrics,
     TranscriptMessage,
     ChatRequest,
+    ScreenCaptureRequest,
 )
 from websocket_manager import ConnectionManager, parse_control_message
 from audio_capture import capture_system_audio
 from stt import transcribe_audio
 from llm import generate_answer, summarize_context
 from resume_parser import parse_resume
+from screen_capture import extract_text_from_image
 from utils import setup_logging, encode_wav, is_silent, perf_timer
 
 # ── Globals ──────────────────────────────────────────────────────────
@@ -214,6 +216,31 @@ async def chat(request: ChatRequest):
     except Exception as e:
         logger.error(f"❌ Chat endpoint error: {e}")
         return {"status": "error", "error": "Failed to process chat request."}
+
+
+# ── Screen Capture OCR ──────────────────────────────────────────────
+@app.post("/capture-screen")
+async def capture_screen(request: ScreenCaptureRequest):
+    """Extract text from a screenshot via OCR. Returns the text for user review."""
+    import base64
+
+    try:
+        image_bytes = base64.b64decode(request.image)
+    except Exception:
+        return {"status": "error", "error": "Invalid base64 image data."}
+
+    # Run OCR in a thread to avoid blocking the event loop
+    try:
+        extracted_text = await asyncio.to_thread(extract_text_from_image, image_bytes)
+    except RuntimeError as e:
+        logger.error(f"OCR error: {e}")
+        return {"status": "error", "error": str(e)}
+
+    if not extracted_text:
+        return {"status": "error", "error": "No text could be extracted from the image."}
+
+    logger.info(f"OCR extracted {len(extracted_text)} chars from screenshot")
+    return {"status": "ok", "text": extracted_text}
 
 
 # ── Audio → STT → LLM pipeline (producer/consumer) ─────────────────

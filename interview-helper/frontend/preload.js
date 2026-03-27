@@ -8,4 +8,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
     minimizeWindow: () => ipcRenderer.send("window-minimize"),
     closeWindow: () => ipcRenderer.send("window-close"),
     selectResumeFile: () => ipcRenderer.invoke("select-resume-file"),
+    captureScreen: (rect) => ipcRenderer.invoke("capture-screen", rect),
+    onTriggerScreenCapture: (callback) => ipcRenderer.on("trigger-screen-capture", callback),
 });

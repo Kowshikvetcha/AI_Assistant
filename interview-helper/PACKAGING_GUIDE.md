@@ -60,6 +60,23 @@ These are tools you need on your computer to BUILD the installer. End users do N
 
 ---
 
+### Step 3 — Install Tesseract-OCR
+
+Tesseract is the OCR engine used by the Screen Capture feature. It **must be installed on the build machine** so the build script can bundle it into the installer. End users do NOT need to install it separately.
+
+1. Download the Windows installer from **https://github.com/UB-Mannheim/tesseract/wiki**
+2. Run the installer — use the default settings
+3. Note the install location (default: `C:\Users\<you>\AppData\Local\Programs\Tesseract-OCR`)
+
+**Verify it worked:**
+- Open a Command Prompt
+- Run: `"C:\Users\<you>\AppData\Local\Programs\Tesseract-OCR\tesseract.exe" --version`
+- You should see something like `tesseract v5.5.0`
+
+The build script will automatically copy Tesseract from this location into the packaged app.
+
+---
+
 ---
 
 ## Part 2 — Setting up the project (one-time)
@@ -102,35 +119,49 @@ packaging\build.bat
 
 Press Enter and wait.
 
-**The script will run 4 steps automatically:**
+**The script will run 5 steps automatically:**
 
-#### Step 1 of 4 — Installing Python dependencies
+#### Step 1 of 5 — Installing Python dependencies
 ```
-[1/4] Installing Python dependencies...
+[1/5] Installing Python dependencies...
 ```
 - Downloads and installs all the Python libraries the backend needs
 - Also installs PyInstaller (the tool that bundles Python into an .exe)
 - Takes 1–3 minutes on first run (faster after that, as packages are cached)
 
-#### Step 2 of 4 — Building the backend executable
+#### Step 2 of 5 — Building the backend executable
 ```
-[2/4] Building backend executable (this may take a few minutes)...
+[2/5] Building backend executable (this may take a few minutes)...
 ```
 - PyInstaller bundles the entire Python backend into a single folder
 - This is the most time-consuming step — can take 3–8 minutes
 - You will see a lot of text scrolling by — this is normal
 - Output goes to: `packaging\dist\backend\`
 
-#### Step 3 of 4 — Installing electron-builder
+#### Step 3 of 5 — Bundling Tesseract-OCR
 ```
-[3/4] Installing electron-builder (packaging tool)...
+[3/5] Bundling Tesseract-OCR...
+```
+- Copies the Tesseract-OCR installation into `packaging\dist\backend\tesseract\`
+- The backend auto-detects this bundled copy at runtime — no user setup needed
+- Only the essential files are copied (exe, DLLs, and `tessdata` language data)
+
+**If this step fails**, the script will print an error with the expected Tesseract path. Make sure you completed Step 3 in Part 1 (Install Tesseract-OCR). You can also set the `TESSERACT_DIR` environment variable to point to your Tesseract install location if it is in a non-standard path:
+```
+set TESSERACT_DIR=D:\MyTools\Tesseract-OCR
+packaging\build.bat
+```
+
+#### Step 4 of 5 — Installing electron-builder
+```
+[4/5] Installing electron-builder (packaging tool)...
 ```
 - Downloads electron-builder (the tool that creates the Windows installer)
 - Takes 1–2 minutes on first run
 
-#### Step 4 of 4 — Building the installer
+#### Step 5 of 5 — Building the installer
 ```
-[4/4] Building Windows installer (this may take a few minutes)...
+[5/5] Building Windows installer (this may take a few minutes)...
 ```
 - Packages the Electron frontend + Python backend into one installer
 - Downloads Electron binaries if not already cached (~60 MB, one-time)
@@ -181,6 +212,28 @@ This is the file you send to users.
 1. Make sure you have an internet connection
 2. If you are behind a corporate firewall/proxy, pip may be blocked — contact your IT team
 3. Try running the Command Prompt as Administrator (right-click → "Run as administrator")
+
+---
+
+### Error: `Tesseract-OCR not found` during build
+**Cause:** The build script could not locate the Tesseract-OCR installation to bundle it
+**Fix:**
+1. Make sure Tesseract-OCR is installed (see Step 3 in Part 1)
+2. The build script checks these locations in order:
+   - The `TESSERACT_DIR` environment variable (if set)
+   - `%LOCALAPPDATA%\Programs\Tesseract-OCR`
+   - `C:\Program Files\Tesseract-OCR`
+3. If your Tesseract is installed elsewhere, set the path before building:
+   ```
+   set TESSERACT_DIR=D:\path\to\Tesseract-OCR
+   packaging\build.bat
+   ```
+
+---
+
+### Error: Screen Capture says "Tesseract not found" in the packaged app
+**Cause:** Tesseract was not bundled into the installer correctly
+**Fix:** Verify that the folder `packaging\dist\backend\tesseract\` exists and contains `tesseract.exe` after running the build. If not, the Tesseract bundling step failed — check the build output for errors.
 
 ---
 
@@ -240,6 +293,8 @@ You can share it via Google Drive, WeTransfer, USB drive, or any file sharing me
 8. Launch **Interview Helper** from the Desktop shortcut or Start Menu
 
 That's it — the app is ready to use.
+
+**Note:** Tesseract-OCR (for Screen Capture) is bundled inside the installer. Users do **not** need to install it separately. The app detects the bundled copy automatically.
 
 ---
 

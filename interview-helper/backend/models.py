@@ -78,3 +78,8 @@ class PerformanceMetrics(BaseModel):
 class ChatRequest(BaseModel):
     """Manual chat request from the UI."""
     question: str = Field(..., min_length=1, description="User question text")
+
+
+class ScreenCaptureRequest(BaseModel):
+    """Screen capture OCR request from the frontend."""
+    image: str = Field(..., description="Base64-encoded screenshot image")
