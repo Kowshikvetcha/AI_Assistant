@@ -37,6 +37,52 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Hide the OS cursor everywhere so screen-share never captures it.
+   A DOM-rendered cursor (#app-cursor) replaces it visually. */
+*, *::before, *::after {
+  cursor: none !important;
+}
+
+#app-cursor {
+  position: fixed;
+  width: 16px;
+  height: 16px;
+  pointer-events: none;
+  z-index: 99999;
+  display: none;
+  /* Default arrow shape via border trick */
+  border-left: 6px solid var(--text-primary);
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-right: 5px solid transparent;
+  transform-origin: 0 50%;
+  transform: rotate(-30deg);
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6));
+  transition: none;
+}
+
+#app-cursor.pointer {
+  /* Pointer/hand: slightly larger, rotated differently */
+  border-left: 7px solid var(--text-primary);
+  border-top: 6px solid transparent;
+  border-bottom: 6px solid transparent;
+  transform: rotate(-15deg);
+}
+
+#app-cursor.text {
+  /* Text cursor: thin vertical bar */
+  border: none;
+  width: 2px;
+  height: 18px;
+  background: var(--text-primary);
+  transform: none;
+}
+
+#app-cursor.not-allowed {
+  border-left-color: var(--text-dim);
+  opacity: 0.5;
+}
+
 #app {
   display: flex;
   flex-direction: column;
@@ -212,10 +258,17 @@ body {
   flex-shrink: 0;
 }
 
-#chat-input {
+#chat-input-wrap {
   flex: 1;
   min-width: 0;
-  padding: 6px 10px;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+#chat-input {
+  width: 100%;
+  padding: 6px 26px 6px 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: rgba(20, 20, 40, 0.5);
@@ -223,6 +276,29 @@ body {
   font-size: 12px;
   font-family: 'Inter', sans-serif;
   outline: none;
+}
+
+.chat-clear-btn {
+  position: absolute;
+  right: 4px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 50%;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1;
+  padding: 0;
+  transition: all 0.15s ease;
+}
+
+.chat-clear-btn:hover {
+  background: rgba(248, 113, 113, 0.25);
+  color: var(--red);
 }
 
 #chat-input::placeholder {

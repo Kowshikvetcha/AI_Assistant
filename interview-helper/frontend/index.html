@@ -9,6 +9,7 @@
 </head>
 
 <body>
+  <div id="app-cursor"></div>
   <div id="app">
     <!-- Title bar (draggable) -->
     <div id="titlebar">
@@ -17,8 +18,8 @@
         <span class="title-text">Interview Helper</span>
       </div>
       <div class="titlebar-right">
-        <button id="btn-minimize" class="title-btn" title="Minimize">─</button>
-        <button id="btn-close" class="title-btn close" title="Close">✕</button>
+        <button id="btn-minimize" class="title-btn">─</button>
+        <button id="btn-close" class="title-btn close">✕</button>
       </div>
     </div>
 
@@ -28,7 +29,7 @@
       <button id="btn-stop" class="ctrl-btn stop" disabled>⏹ Stop</button>
       <button id="btn-clear" class="ctrl-btn clear">🗑 Clear</button>
       <button id="btn-clear-memory" class="ctrl-btn clear-memory">🧹 Clear Memory</button>
-      <button id="btn-capture" class="ctrl-btn capture" title="Capture Screen (Ctrl+Shift+S)">📸 Capture</button>
+      <button id="btn-capture" class="ctrl-btn capture">📸 Capture</button>
       <div id="status-indicator">
         <span class="status-dot" id="status-dot"></span>
         <span id="status-text">Disconnected</span>
@@ -42,7 +43,10 @@
     </div>
     <!-- Manual Chat -->
     <div id="chat-row">
-      <input id="chat-input" type="text" placeholder="Type your interview question..." autocomplete="off" />
+      <div id="chat-input-wrap">
+        <input id="chat-input" type="text" placeholder="Type your interview question..." autocomplete="off" />
+        <button id="btn-chat-clear" class="chat-clear-btn" onclick="var i=document.getElementById('chat-input'); i.value=''; i.focus(); this.style.display='none';">✕</button>
+      </div>
       <button id="btn-chat-send" class="ctrl-btn chat-send">Send</button>
     </div>
     <!-- Live Transcript -->
@@ -101,6 +105,43 @@
     </div>
   </div>
 
+  <script>
+    // Custom DOM cursor — the OS cursor is hidden (cursor:none) so screen-share
+    // never captures it. This DOM element is inside the content-protected window.
+    (function () {
+      const cur = document.getElementById('app-cursor');
+      document.addEventListener('mousemove', (e) => {
+        cur.style.display = 'block';
+        cur.style.left = e.clientX + 'px';
+        cur.style.top = e.clientY + 'px';
+
+        // Determine cursor shape from the element under the mouse
+        const el = document.elementFromPoint(e.clientX, e.clientY);
+        if (!el) return;
+        const tag = el.tagName;
+        const isBtn = tag === 'BUTTON' || el.closest('button');
+        const isInput = tag === 'INPUT' || tag === 'TEXTAREA';
+        const isDisabled = el.disabled || (el.closest('button') && el.closest('button').disabled);
+
+        cur.className = '';
+        if (isDisabled) cur.className = 'not-allowed';
+        else if (isBtn) cur.className = 'pointer';
+        else if (isInput) cur.className = 'text';
+      });
+
+      document.addEventListener('mouseleave', () => { cur.style.display = 'none'; });
+      document.addEventListener('mouseenter', () => { cur.style.display = 'block'; });
+    })();
+
+    // Show/hide chat input clear button based on content
+    (function () {
+      const input = document.getElementById('chat-input');
+      const clearBtn = document.getElementById('btn-chat-clear');
+      function toggle() { clearBtn.style.display = input.value ? 'flex' : 'none'; }
+      input.addEventListener('input', toggle);
+      toggle();
+    })();
+  </script>
   <script src="renderer.js"></script>
 </body>
 

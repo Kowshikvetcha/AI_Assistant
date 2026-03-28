@@ -18,6 +18,7 @@ const path = require("path");
 const fs = require("fs");
 
 let mainWindow = null;
+let captureInProgress = false;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -46,17 +47,16 @@ function createWindow() {
   mainWindow.setAlwaysOnTop(true, "screen-saver"); // Highest priority
   mainWindow.setVisibleOnAllWorkspaces(true);
 
-  // Aggressively keep window on top
+  // Aggressively keep window on top (paused during screen capture)
   const topInterval = setInterval(() => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow && !mainWindow.isDestroyed() && !captureInProgress) {
       mainWindow.setAlwaysOnTop(true, "screen-saver");
       mainWindow.moveTop();
     }
   }, 1000);
 
   mainWindow.on("blur", () => {
-    // Re-assert always on top
-    if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow && !mainWindow.isDestroyed() && !captureInProgress) {
       mainWindow.setAlwaysOnTop(true, "screen-saver");
     }
   });
@@ -66,8 +66,8 @@ function createWindow() {
   });
 }
 
-// ── Region Selection Overlay ──────────────────────────────────────────
-function createSelectionWindow() {
+// ── Region Selection Overlay (Two-Pass: select on pre-captured screenshot) ────
+function createScreenshotSelectionWindow(screenshotBase64) {
   return new Promise((resolve) => {
     const primaryDisplay = screen.getPrimaryDisplay();
     const { width, height } = primaryDisplay.size;
@@ -79,12 +79,13 @@ function createSelectionWindow() {
       width,
       height,
       frame: false,
-      transparent: true,
+      transparent: false,
       alwaysOnTop: true,
       skipTaskbar: true,
       resizable: false,
       movable: false,
       fullscreen: false,
+      show: false, // Don't show until screenshot background is ready
       webPreferences: {
         contextIsolation: false,
         nodeIntegration: true,
@@ -94,6 +95,10 @@ function createSelectionWindow() {
     selectionWindow.setContentProtection(true);
     selectionWindow.setAlwaysOnTop(true, "screen-saver");
 
+    // HTML is kept small — screenshot is sent via IPC after load to avoid
+    // exceeding Chromium's ~2 MB data-URL navigation limit.
+    // cursor:none hides the OS cursor (which screen-share captures);
+    // a DOM-rendered crosshair replaces it (hidden by setContentProtection).
     const selectionHTML = `
     <!DOCTYPE html>
     <html>
@@ -102,10 +107,41 @@ function createSelectionWindow() {
       * { margin: 0; padding: 0; }
       html, body {
         width: 100vw; height: 100vh; overflow: hidden;
-        background: rgba(0, 0, 0, 0.3);
-        cursor: crosshair;
+        cursor: none;
         user-select: none;
         -webkit-app-region: no-drag;
+        background: #000;
+        background-size: cover;
+        background-repeat: no-repeat;
+        background-position: center center;
+      }
+      #veil {
+        position: absolute;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0, 0, 0, 0.15);
+        pointer-events: none;
+      }
+      #crosshair {
+        position: absolute;
+        pointer-events: none;
+        z-index: 9999;
+        display: none;
+      }
+      #crosshair::before, #crosshair::after {
+        content: '';
+        position: absolute;
+        background: #fff;
+        box-shadow: 0 0 3px rgba(0,0,0,0.7);
+      }
+      #crosshair::before {
+        width: 2px; height: 24px;
+        left: 50%; top: 50%;
+        transform: translate(-50%, -50%);
+      }
+      #crosshair::after {
+        height: 2px; width: 24px;
+        left: 50%; top: 50%;
+        transform: translate(-50%, -50%);
       }
       #selection {
         position: absolute;
@@ -127,14 +163,41 @@ function createSelectionWindow() {
     </style>
     </head>
     <body>
+      <div id="veil"></div>
+      <div id="crosshair"></div>
       <div id="hint">Drag to select a region &middot; Press Escape to cancel</div>
       <div id="selection"></div>
       <script>
         const { ipcRenderer } = require("electron");
         const sel = document.getElementById("selection");
         const hint = document.getElementById("hint");
+        const crosshair = document.getElementById("crosshair");
         const scaleFactor = ${scaleFactor};
         let startX = 0, startY = 0, dragging = false;
+
+        // Receive screenshot from main process and set as background
+        ipcRenderer.on("set-screenshot", (event, base64) => {
+          document.body.style.backgroundImage =
+            'url("data:image/png;base64,' + base64 + '")';
+          ipcRenderer.send("screenshot-ready");
+        });
+
+        // Track mouse to position custom crosshair
+        document.addEventListener("mousemove", (e) => {
+          crosshair.style.display = "block";
+          crosshair.style.left = e.clientX + "px";
+          crosshair.style.top = e.clientY + "px";
+
+          if (!dragging) return;
+          const x = Math.min(e.clientX, startX);
+          const y = Math.min(e.clientY, startY);
+          const w = Math.abs(e.clientX - startX);
+          const h = Math.abs(e.clientY - startY);
+          sel.style.left = x + "px";
+          sel.style.top = y + "px";
+          sel.style.width = w + "px";
+          sel.style.height = h + "px";
+        });
 
         document.addEventListener("mousedown", (e) => {
           startX = e.clientX;
@@ -146,18 +209,6 @@ function createSelectionWindow() {
           sel.style.top = startY + "px";
           sel.style.width = "0px";
           sel.style.height = "0px";
-        });
-
-        document.addEventListener("mousemove", (e) => {
-          if (!dragging) return;
-          const x = Math.min(e.clientX, startX);
-          const y = Math.min(e.clientY, startY);
-          const w = Math.abs(e.clientX - startX);
-          const h = Math.abs(e.clientY - startY);
-          sel.style.left = x + "px";
-          sel.style.top = y + "px";
-          sel.style.width = w + "px";
-          sel.style.height = h + "px";
         });
 
         document.addEventListener("mouseup", (e) => {
@@ -192,10 +243,27 @@ function createSelectionWindow() {
       `data:text/html;charset=utf-8,${encodeURIComponent(selectionHTML)}`
     );
 
+    // Once HTML is loaded, send the screenshot via IPC and show after it's set
+    selectionWindow.webContents.on("did-finish-load", () => {
+      selectionWindow.webContents.send("set-screenshot", screenshotBase64);
+    });
+
+    ipcMain.once("screenshot-ready", () => {
+      if (!selectionWindow.isDestroyed()) {
+        selectionWindow.show();
+        // Re-apply after show() — calling before show on a hidden window
+        // may not persist on all Windows versions
+        selectionWindow.setContentProtection(true);
+        selectionWindow.setAlwaysOnTop(true, "screen-saver");
+        selectionWindow.focus();
+      }
+    });
+
     let settled = false;
     const settle = (value) => {
       if (settled) return;
       settled = true;
+      ipcMain.removeAllListeners("screenshot-ready");
       resolve(value);
     };
 
@@ -212,8 +280,10 @@ function createSelectionWindow() {
   });
 }
 
-// ── IPC: Screen Capture ───────────────────────────────────────────────
+// ── IPC: Screen Capture (Two-Pass: capture first, then select on screenshot) ──
 ipcMain.handle("capture-screen", async () => {
+  captureInProgress = true;
+
   // Temporarily hide the main overlay so it doesn't appear in the capture
   const wasVisible = mainWindow && mainWindow.isVisible();
   if (wasVisible) {
@@ -221,22 +291,17 @@ ipcMain.handle("capture-screen", async () => {
   }
 
   try {
-    // Show region selection overlay
-    const rect = await createSelectionWindow();
-
-    if (!rect) {
-      return null; // User cancelled
-    }
-
-    // Brief pause so the OS finishes removing the selection overlay from screen
+    // Brief pause so the OS finishes hiding the main window
     await new Promise((r) => setTimeout(r, 150));
 
-    // Capture the screen
+    // Step 1: Capture the full screen BEFORE showing any overlay
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const scaleFactor = primaryDisplay.scaleFactor || 1;
     const sources = await desktopCapturer.getSources({
       types: ["screen"],
       thumbnailSize: {
-        width: screen.getPrimaryDisplay().size.width * (screen.getPrimaryDisplay().scaleFactor || 1),
-        height: screen.getPrimaryDisplay().size.height * (screen.getPrimaryDisplay().scaleFactor || 1),
+        width: primaryDisplay.size.width * scaleFactor,
+        height: primaryDisplay.size.height * scaleFactor,
       },
     });
 
@@ -244,21 +309,30 @@ ipcMain.handle("capture-screen", async () => {
       return null;
     }
 
-    // Use the primary display source
     const source = sources[0];
     const fullImage = source.thumbnail;
+    const screenshotBase64 = fullImage.toPNG().toString("base64");
 
-    // Crop to the selected region
+    // Step 2: Show selection overlay with the captured screenshot as background
+    const rect = await createScreenshotSelectionWindow(screenshotBase64);
+
+    if (!rect) {
+      return null; // User cancelled
+    }
+
+    // Step 3: Crop from the already-captured image (no second capture needed)
     const cropped = fullImage.crop(rect);
     const base64 = cropped.toPNG().toString("base64");
 
     return base64;
   } finally {
-    // Restore main overlay visibility
+    // Restore main overlay visibility and re-apply protection
     if (wasVisible && mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.show();
+      mainWindow.setContentProtection(true);
       mainWindow.setAlwaysOnTop(true, "screen-saver");
     }
+    captureInProgress = false;
   }
 });
 
