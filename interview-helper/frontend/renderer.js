@@ -5,11 +5,12 @@
  */
 
 // ── Configuration ──
-const WS_URL = "ws://localhost:8765/ws";
+let BACKEND_PORT = 8765;
+let WS_URL = `ws://localhost:${BACKEND_PORT}/ws`;
 const RECONNECT_DELAY_MIN_MS = 3000;
 const RECONNECT_DELAY_MAX_MS = 30000;
 const MAX_TRANSCRIPT_LINES = 20;
-const BACKEND_URL = "http://localhost:8765";
+let BACKEND_URL = `http://localhost:${BACKEND_PORT}`;
 
 // ── DOM Elements ──
 const $ = (id) => document.getElementById(id);
@@ -289,6 +290,21 @@ elements.btnClose.addEventListener("click", () => {
     if (window.electronAPI) window.electronAPI.closeWindow();
 });
 
+// Settings button
+const btnSettings = document.getElementById("btn-settings");
+if (btnSettings) {
+    btnSettings.addEventListener("click", () => {
+        if (window.electronAPI) window.electronAPI.openSettings();
+    });
+}
+
+// Listen for backend status updates from main process
+if (window.electronAPI && window.electronAPI.onBackendStatus) {
+    window.electronAPI.onBackendStatus((status) => {
+        updateStatus("connecting", status);
+    });
+}
+
 // ── Resume Upload ──
 elements.btnResume.addEventListener("click", async () => {
     if (!window.electronAPI) {
@@ -479,9 +495,20 @@ if (window.electronAPI && window.electronAPI.onTriggerScreenCapture) {
     });
 }
 
-connect();
-
-
-
-
+// Resolve backend port from settings, then connect
+(async function init() {
+    if (window.electronAPI && window.electronAPI.getBackendPort) {
+        try {
+            const port = await window.electronAPI.getBackendPort();
+            if (port) {
+                BACKEND_PORT = port;
+                WS_URL = `ws://localhost:${BACKEND_PORT}/ws`;
+                BACKEND_URL = `http://localhost:${BACKEND_PORT}`;
+            }
+        } catch (err) {
+            console.warn("[Init] Could not get backend port, using default:", err);
+        }
+    }
+    connect();
+})();
 

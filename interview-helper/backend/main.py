@@ -658,7 +658,7 @@ if __name__ == "__main__":
     for attempt in range(1, max_retries + 1):
         try:
             uvicorn.run(
-                "main:app",
+                app,
                 host="0.0.0.0",
                 port=settings.WEBSOCKET_PORT,
                 reload=False,

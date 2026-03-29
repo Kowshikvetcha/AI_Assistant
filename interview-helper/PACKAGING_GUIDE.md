@@ -16,7 +16,7 @@ When someone runs this installer, it:
 2. Creates a Desktop shortcut and Start Menu entry
 3. Bundles everything needed — no extra software required
 
-The only thing the end user needs to do after installing is add their API key to a config file.
+The end user configures their API key and provider through the **in-app Settings UI** (gear icon in the titlebar). No `.env` file editing required.
 
 ---
 
@@ -52,7 +52,7 @@ These are tools you need on your computer to BUILD the installer. End users do N
 5. Wait for it to finish
 
 **Verify it worked:**
-- Open a new Command Prompt (`Win + R` → `cmd` → Enter)
+- Open a new Command Prompt (`Win + R` > `cmd` > Enter)
 - Type `node --version` and press Enter
 - You should see something like `v20.11.0`
 - Type `npm --version` and press Enter
@@ -77,41 +77,49 @@ The build script will automatically copy Tesseract from this location into the p
 
 ---
 
+### Step 4 — Enable Developer Mode (required for first build)
+
+Windows requires Developer Mode to create symbolic links during the build process.
+
+1. Open **Settings**
+2. Search for **"Developer Mode"**
+3. Toggle **Developer Mode** to **On**
+
+This is a one-time setting. Without it, electron-builder will fail with a "Cannot create symbolic link" error.
+
 ---
 
 ## Part 2 — Setting up the project (one-time)
 
-### Step 4 — Get the project files
+### Step 5 — Get the project files
 
-If you haven't already, make sure you have the full Interview Helper project folder on your computer, including all of these subfolders:
+Make sure you have the full Interview Helper project folder on your computer, including all of these subfolders:
 ```
 interview-helper/
 ├── backend/
 ├── frontend/
-├── packaging/     ← must exist (contains the build scripts)
-└── .env.example   ← must exist
+├── packaging/     <-- contains build.bat and backend.spec
+└── .env.example
 ```
-
-If the `packaging/` folder is missing, it needs to be recreated. Ask the developer for the packaging scripts or refer to the project documentation.
 
 ---
 
-### Step 5 — Open a terminal in the project folder
+### Step 6 — Open a terminal in the project folder
 
 1. Open **File Explorer**
 2. Navigate to the `interview-helper` folder
 3. Click on the address bar at the top (where it shows the folder path)
 4. Type `cmd` and press Enter
 
-A black Command Prompt window will open, already inside the correct folder. You can verify by checking the prompt — it should show the path ending in `interview-helper`.
+A black Command Prompt window will open, already inside the correct folder.
 
 ---
 
 ## Part 3 — Building the installer
 
-### Step 6 — Run the build script
+### Step 7 — Run the build script
 
-In the Command Prompt window you opened in Step 5, type exactly:
+In the Command Prompt window you opened in Step 6, type exactly:
 
 ```
 packaging\build.bat
@@ -127,14 +135,13 @@ Press Enter and wait.
 ```
 - Downloads and installs all the Python libraries the backend needs
 - Also installs PyInstaller (the tool that bundles Python into an .exe)
-- Takes 1–3 minutes on first run (faster after that, as packages are cached)
 
 #### Step 2 of 5 — Building the backend executable
 ```
 [2/5] Building backend executable (this may take a few minutes)...
 ```
 - PyInstaller bundles the entire Python backend into a single folder
-- This is the most time-consuming step — can take 3–8 minutes
+- This is the most time-consuming step
 - You will see a lot of text scrolling by — this is normal
 - Output goes to: `packaging\dist\backend\`
 
@@ -144,20 +151,13 @@ Press Enter and wait.
 ```
 - Copies the Tesseract-OCR installation into `packaging\dist\backend\tesseract\`
 - The backend auto-detects this bundled copy at runtime — no user setup needed
-- Only the essential files are copied (exe, DLLs, and `tessdata` language data)
-
-**If this step fails**, the script will print an error with the expected Tesseract path. Make sure you completed Step 3 in Part 1 (Install Tesseract-OCR). You can also set the `TESSERACT_DIR` environment variable to point to your Tesseract install location if it is in a non-standard path:
-```
-set TESSERACT_DIR=D:\MyTools\Tesseract-OCR
-packaging\build.bat
-```
+- If Tesseract is not found, the build continues with a warning (Screen Capture OCR won't work)
 
 #### Step 4 of 5 — Installing electron-builder
 ```
-[4/5] Installing electron-builder (packaging tool)...
+[4/5] Installing frontend dependencies and electron-builder...
 ```
 - Downloads electron-builder (the tool that creates the Windows installer)
-- Takes 1–2 minutes on first run
 
 #### Step 5 of 5 — Building the installer
 ```
@@ -165,7 +165,6 @@ packaging\build.bat
 ```
 - Packages the Electron frontend + Python backend into one installer
 - Downloads Electron binaries if not already cached (~60 MB, one-time)
-- Takes 2–5 minutes
 
 #### Success message
 When everything works, you will see:
@@ -174,7 +173,6 @@ When everything works, you will see:
   Build complete!
 
   Installer: C:\...\packaging\release\
-  ...
 ============================================================
 ```
 
@@ -205,13 +203,24 @@ This is the file you send to users.
 
 ---
 
-
-### Error: `[1/4]` fails with pip errors
+### Error: `[1/5]` fails with pip errors
 **Cause:** Python packages failed to install
 **Fix:**
 1. Make sure you have an internet connection
 2. If you are behind a corporate firewall/proxy, pip may be blocked — contact your IT team
-3. Try running the Command Prompt as Administrator (right-click → "Run as administrator")
+3. Try running the Command Prompt as Administrator (right-click > "Run as administrator")
+
+---
+
+### Error: `Cannot create symbolic link` during step 5
+**Cause:** Windows Developer Mode is not enabled
+**Fix:**
+1. Enable Developer Mode: **Settings** > search "Developer Mode" > toggle **On**
+2. Clear the failed cache:
+   ```
+   rmdir /s /q "%LOCALAPPDATA%\electron-builder\Cache\winCodeSign"
+   ```
+3. Re-run `packaging\build.bat`
 
 ---
 
@@ -273,28 +282,18 @@ You can share it via Google Drive, WeTransfer, USB drive, or any file sharing me
 
 ### What users need to do after installing
 
-1. Run the installer — click through the wizard (Next → Next → Install)
-2. After installation, open **File Explorer**
-3. Paste this path into the address bar and press Enter:
-   ```
-   %LOCALAPPDATA%\Programs\Interview Helper\resources
-   ```
-4. Find the file named `.env` and open it with **Notepad**
-   - Right-click the file → Open with → Notepad
-5. Find this line:
-   ```
-   AI_API_KEY=sk-proj-xxxxxxxxxxxxxxxxxxxxxxx
-   ```
-6. Replace the placeholder with their actual API key:
-   ```
-   AI_API_KEY=sk-proj-YOUR_ACTUAL_KEY_HERE
-   ```
-7. Save the file (Ctrl+S) and close Notepad
-8. Launch **Interview Helper** from the Desktop shortcut or Start Menu
+1. Run the installer — click through the wizard (Next > Next > Install)
+2. Launch **Interview Helper** from the Desktop shortcut or Start Menu
+3. Click the **gear icon** in the titlebar to open Settings
+4. Select their **AI Provider** (e.g., OpenAI, Groq, etc.)
+5. Enter their **API Key**
+6. Optionally override model names (leave empty for provider defaults)
+7. Click **Save**
+8. The app is ready to use
 
-That's it — the app is ready to use.
+No `.env` file editing. No terminal commands. Settings are saved automatically and persist across app restarts.
 
-**Note:** Tesseract-OCR (for Screen Capture) is bundled inside the installer. Users do **not** need to install it separately. The app detects the bundled copy automatically.
+**Note:** Tesseract-OCR (for Screen Capture) is bundled inside the installer. Users do **not** need to install it separately.
 
 ---
 
@@ -310,11 +309,26 @@ Before building, if you want to change the version shown in the installer:
 
 ---
 
+## How settings work in the packaged app
+
+The packaged app does **not** use `.env` files. Instead:
+
+1. User configures settings via the **gear icon** in the titlebar
+2. Settings are saved to `%APPDATA%\interview-helper\settings.json`
+3. When the backend starts, Electron reads the JSON and passes values as **environment variables** to the backend process
+4. The Python backend (Pydantic BaseSettings) reads environment variables automatically
+5. When settings change, the backend is restarted with the new values
+
+Settings file location: `%APPDATA%\interview-helper\settings.json`
+
+---
+
 ## Summary cheatsheet
 
-| Task | Command |
+| Task | Command / Location |
 |------|---------|
 | Build the installer | `packaging\build.bat` |
 | Find the installer | `packaging\release\` |
-| User's config file | `%LOCALAPPDATA%\Programs\Interview Helper\resources\.env` |
+| User's settings | Gear icon in titlebar (saved to `%APPDATA%\interview-helper\settings.json`) |
 | Rebuild from scratch | Just run `packaging\build.bat` again |
+| Enable Developer Mode | Settings > For Developers > Developer Mode ON |

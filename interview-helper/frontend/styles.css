@@ -167,6 +167,15 @@ body {
   color: var(--red);
 }
 
+.title-btn.settings-btn {
+  font-size: 14px;
+}
+
+.title-btn.settings-btn:hover {
+  background: var(--bg-hover);
+  color: var(--accent);
+}
+
 /* ── Controls ── */
 #controls {
   display: flex;

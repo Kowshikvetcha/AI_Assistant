@@ -15,7 +15,6 @@ build/
 # Frontend dependencies
 frontend/node_modules/
 frontend/package-lock.json
-
 # Environment / secrets
 .env
 

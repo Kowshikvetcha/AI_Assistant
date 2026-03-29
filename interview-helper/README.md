@@ -1,4 +1,4 @@
-# 🎯 Real-Time Interview Helper
+# Real-Time Interview Helper
 
 A desktop tool that captures system audio from Zoom / Google Meet / Teams, transcribes it via OpenAI Whisper API, generates structured interview answers via GPT-4o, and displays them in a floating always-on-top overlay.
 
@@ -8,36 +8,37 @@ A desktop tool that captures system audio from Zoom / Google Meet / Teams, trans
 
 ```
 System Audio (WASAPI Loopback)
-        │
-        ▼  PCM chunks (1-2s)
-┌──────────────────────┐
-│   FastAPI Backend     │
-│  ┌────────────────┐   │
-│  │ Audio Capture   │──┼──► OpenAI Whisper API ──► Transcript
-│  │ (soundcard)     │  │
-│  └────────────────┘   │
-│  ┌────────────────┐   │
-│  │ LLM Service     │──┼──► OpenAI GPT-4o ──► Structured JSON
-│  └────────────────┘   │
-│  ┌────────────────┐   │
-│  │ WebSocket Srv   │──┼──► Push to Frontend
-│  └────────────────┘   │
-└──────────────────────┘
-        │
-        ▼  WebSocket
-┌──────────────────────┐
-│  Electron Overlay     │
-│  • Live transcript    │
-│  • Answer + bullets   │
-│  • Code snippets      │
-│  • Always-on-top      │
-│  • Ctrl+Shift+H toggle│
-└──────────────────────┘
+        |
+        v  PCM chunks (1-2s)
++----------------------+
+|   FastAPI Backend     |
+|  +----------------+   |
+|  | Audio Capture   |--+--> OpenAI Whisper API --> Transcript
+|  | (soundcard)     |  |
+|  +----------------+   |
+|  +----------------+   |
+|  | LLM Service     |--+--> OpenAI GPT-4o --> Structured JSON
+|  +----------------+   |
+|  +----------------+   |
+|  | WebSocket Srv   |--+--> Push to Frontend
+|  +----------------+   |
++----------------------+
+        |
+        v  WebSocket
++----------------------+
+|  Electron Overlay     |
+|  - Live transcript    |
+|  - Answer + bullets   |
+|  - Code snippets      |
+|  - Always-on-top      |
+|  - Ctrl+Shift+H toggle|
+|  - In-app settings    |
++----------------------+
 ```
 
 ---
 
-## 🚀 Quick Start (30 seconds)
+## Quick Start (Development)
 
 ```bash
 # 1. Create and activate Python 3.10/3.13 virtual environment
@@ -62,9 +63,30 @@ cd frontend && npm start
 
 ---
 
-## Prerequisites
+## Packaged App (End Users)
 
-- **Python 3.10 or 3.13** (⚠️ NOT 3.14 — compatibility issues with pydantic-core)
+End users don't need Python, Node.js, or any dev tools. They receive a single installer:
+
+```
+Interview Helper Setup 1.0.0.exe
+```
+
+After installing:
+1. Launch **Interview Helper** from the Desktop shortcut or Start Menu
+2. Click the **gear icon** in the titlebar to open Settings
+3. Select an **AI Provider** and enter an **API Key**
+4. Optionally override LLM, Summary, or STT models (defaults are used if left empty)
+5. Click **Save** — the backend starts automatically
+
+No `.env` file editing required. Settings are stored in `%APPDATA%\interview-helper\settings.json`.
+
+See [PACKAGING_GUIDE.md](PACKAGING_GUIDE.md) for build instructions.
+
+---
+
+## Prerequisites (Development)
+
+- **Python 3.10 or 3.13** (NOT 3.14 — compatibility issues with pydantic-core)
 - **Node.js 18+** and **npm**
 - **Windows** (for WASAPI loopback audio capture)
 - **API key** for your configured provider/model stack
@@ -72,7 +94,7 @@ cd frontend && npm start
 
 ---
 
-## Installation Guide
+## Installation Guide (Development)
 
 ### Step 1: Clone Repository
 
@@ -83,10 +105,7 @@ cd interview-helper
 
 ### Step 2: Create Virtual Environment
 
-Create a Python 3.10/3.13 virtual environment in the project root:
-
 ```bash
-# Using Python 3.10 (replace with py or python3.10 if needed)
 python -m venv venv
 
 # Activate virtual environment
@@ -98,10 +117,7 @@ python -m venv venv
 
 ### Step 3: Configure Environment Variables
 
-Create a `.env` file in the `interview-helper/` directory (NOT the root):
-
 ```bash
-# Copy the template
 copy .env.example .env
 ```
 
@@ -110,8 +126,6 @@ Edit `.env` and set your API key/models:
 ```
 AI_PROVIDER=openai
 AI_API_KEY=sk-your-actual-key-here
-# Optional for OpenAI-compatible providers:
-# AI_BASE_URL=https://api.openai.com/v1
 WEBSOCKET_PORT=8765
 # Optional model overrides (leave empty for provider defaults)
 LLM_MODEL=
@@ -122,17 +136,13 @@ AUDIO_CHUNK_DURATION=2
 LOG_LEVEL=INFO
 ```
 
+Note: In development mode, the backend reads from `.env`. In the packaged app, settings come from the in-app Settings UI instead.
+
 ### Step 4: Install Backend Dependencies
 
 ```bash
-# Make sure virtual environment is activated
 cd backend
-
-# Install Python dependencies
 pip install -r requirements.txt
-
-# (If you encounter Rust compilation errors, ensure Rust is installed)
-# Download from: https://rustup.rs/
 ```
 
 ### Step 5: Install Frontend Dependencies
@@ -144,14 +154,12 @@ npm install
 
 ---
 
-## Running the Application
+## Running the Application (Development)
 
 ### Terminal 1: Start the Backend
 
 ```bash
-# From project root, make sure venv is activated
 .\venv\Scripts\Activate.ps1
-
 cd backend
 python main.py
 ```
@@ -175,12 +183,14 @@ The Electron overlay window appears on screen. The frontend automatically connec
 
 ## Usage
 
-1. **Start** the backend, then the frontend.
+1. **Start** the backend, then the frontend (or use the packaged installer).
 2. Join a Zoom / Meet / Teams call (or play any audio).
-3. Click **▶ Start** in the overlay to begin capturing audio.
+3. Click **Start** in the overlay to begin capturing audio.
 4. Watch live transcript and AI-generated answers populate.
-5. Click **⏹ Stop** to pause, **🗑 Clear** to reset.
+5. Click **Stop** to pause, **Clear** to reset.
 6. Press **Ctrl+Shift+H** to toggle overlay visibility.
+7. Press **Ctrl+Shift+S** to capture a screen region for OCR.
+8. Click the **gear icon** to change AI provider, API key, or model settings.
 
 ---
 
@@ -192,25 +202,30 @@ interview-helper/
 │   ├── main.py              # FastAPI server & pipeline orchestration
 │   ├── audio_capture.py     # WASAPI loopback audio capture
 │   ├── stt.py               # OpenAI Whisper API service
-│   ├── llm.py               # OpenAI GPT-4o service
+│   ├── llm.py               # LLM service (multi-provider)
 │   ├── websocket_manager.py # WebSocket connection manager
 │   ├── models.py            # Pydantic data models
-│   ├── config.py            # Settings from .env
+│   ├── config.py            # Settings from env vars / .env
+│   ├── resume_parser.py     # PDF resume parser
+│   ├── screen_capture.py    # Tesseract OCR for screen capture
 │   ├── utils.py             # Logging, timing, WAV encoding
 │   ├── requirements.txt     # Python dependencies
 │   └── tests/               # Unit tests
-│       ├── test_stt.py
-│       ├── test_llm.py
-│       ├── test_websocket.py
-│       └── test_performance.py
 ├── frontend/
-│   ├── main.js              # Electron main process
-│   ├── preload.js           # Context bridge
+│   ├── main.js              # Electron main process, backend spawning, settings management
+│   ├── preload.js           # Context bridge (IPC for settings, capture, etc.)
 │   ├── index.html           # Overlay UI
 │   ├── styles.css           # Dark glassmorphism theme
 │   ├── renderer.js          # WebSocket client & UI logic
-│   └── package.json         # Electron dependencies
-├── .env.example             # Environment template
+│   ├── settings.html        # Settings window UI
+│   ├── settings.css         # Settings window theme
+│   ├── settings-renderer.js # Settings window logic
+│   └── package.json         # Electron + electron-builder config
+├── packaging/
+│   ├── build.bat            # Master build script (5 steps)
+│   └── backend.spec         # PyInstaller spec for backend bundling
+├── .env.example             # Environment template (dev mode)
+├── PACKAGING_GUIDE.md       # How to build the installer
 └── README.md
 ```
 
@@ -219,9 +234,7 @@ interview-helper/
 ## Running Tests
 
 ```bash
-# From project root
 .\venv\Scripts\Activate.ps1
-
 cd backend
 python -m pytest tests/ -v
 ```
@@ -232,10 +245,31 @@ Tests mock all OpenAI API calls — no API key required.
 
 ## Configuration
 
+### In-App Settings (Packaged App)
+
+Click the gear icon in the titlebar. Mandatory fields:
+
+| Field | Description |
+|---|---|
+| **AI Provider** | Select from: openai, groq, openrouter, together, fireworks, deepseek, ollama |
+| **API Key** | Your provider's API key |
+
+Optional fields (leave empty to use provider defaults):
+
+| Field | Description |
+|---|---|
+| LLM Model | Override the main answer model |
+| Summary Model | Override the transcript summary model |
+| STT Model | Override the speech-to-text model |
+
+Settings are saved to `%APPDATA%\interview-helper\settings.json` and passed as environment variables to the backend process.
+
+### Environment Variables (Development)
+
 | Variable | Default | Description |
 |---|---|---|
-| `AI_PROVIDER` | `openai` | Provider label (for config clarity/logging) |
-| `AI_API_KEY` | — | Preferred API key variable |
+| `AI_PROVIDER` | `openai` | Provider name |
+| `AI_API_KEY` | — | API key |
 | `AI_BASE_URL` | — | Optional base URL for OpenAI-compatible providers |
 | `OPENAI_API_KEY` | — | Legacy fallback key variable |
 | `WEBSOCKET_PORT` | `8765` | Backend WebSocket port |
@@ -245,6 +279,7 @@ Tests mock all OpenAI API calls — no API key required.
 | `STT_MODEL` | provider default | Speech-to-text model override |
 | `LLM_MAX_TOKENS` | `1024` | Max response tokens |
 | `LOG_LEVEL` | `INFO` | Logging level |
+| `TESSERACT_CMD` | auto-detected | Path to Tesseract executable |
 
 Provider presets (OpenAI-compatible): `openai`, `openrouter`, `groq`, `together`, `fireworks`, `deepseek`, `ollama`.
 
@@ -252,66 +287,61 @@ Provider presets (OpenAI-compatible): `openai`, `openrouter`, `groq`, `together`
 
 ## Troubleshooting
 
-### ❌ `Missing API key. Set AI_API_KEY (or OPENAI_API_KEY).`
+### Missing API key
 
-**Cause:** `.env` file not found or in wrong location.
+**Cause:** No API key configured.
 
-**Solution:** 
-- Ensure `.env` is in the `interview-helper/` directory (not root)
-- Verify it contains either: `AI_API_KEY=...` or `OPENAI_API_KEY=...`
-- Restart the backend after creating `.env`
+**Solution (packaged app):** Click the gear icon in the titlebar, enter your API key, and click Save.
 
-### ❌ `Port 8765 already in use`
+**Solution (dev mode):** Ensure `.env` is in the `interview-helper/` directory and contains `AI_API_KEY=...`.
+
+### Port 8765 already in use
 
 **Cause:** Backend is already running or a previous instance wasn't properly stopped.
 
 **Solution:**
 ```bash
-# Kill the process using port 8765
 netstat -ano | findstr 8765
 taskkill /PID <PID> /F
-
-# Or change the port in .env
-WEBSOCKET_PORT=8766
 ```
 
-### ❌ `pydantic-core build errors / PyO3 compilation fails`
+Or change the port in settings / `.env`.
+
+### pydantic-core build errors / PyO3 compilation fails
 
 **Cause:** Using Python 3.14, which is too new for current pydantic-core.
 
 **Solution:**
-- Ensure you're using **Python 3.10 or 3.13**
+- Use **Python 3.10 or 3.13**
 - Delete the old venv: `Remove-Item -Recurse venv`
 - Recreate with Python 3.10: `python3.10 -m venv venv`
 - Reinstall dependencies
 
-### ❌ `Rust not found` when installing dependencies
+### Frontend won't connect to backend
 
-**Cause:** Rust toolchain not installed.
-
-**Solution:**
-- Download and install from: https://rustup.rs/
-- It will set up Rust automatically
-- After installation, restart your terminal and retry `pip install -r requirements.txt`
-
-### ❌ Frontend won't connect to backend
-
-**Cause:** Backend not running or wrong port/host.
+**Cause:** Backend not running or wrong port.
 
 **Solution:**
 1. Verify backend is running: `netstat -ano | findstr 8765`
-2. Check browser console in frontend for errors
-3. Verify `.env` has correct `WEBSOCKET_PORT`
-4. Ensure firewall isn't blocking localhost connections
+2. In the packaged app, check that settings are saved (click gear icon)
+3. Ensure firewall isn't blocking localhost connections
 
-### ❌ Audio not being captured
+### Audio not being captured
 
 **Cause:** WASAPI loopback not enabled or wrong audio device.
 
 **Solution:**
-1. Ensure you have system audio loopback enabled (varies by audio driver)
-2. Try with playing system audio (YouTube, Spotify, etc.)
-3. Check `LOG_LEVEL=DEBUG` in `.env` for detailed audio capture logs
+1. Ensure you have system audio playing (YouTube, Spotify, etc.)
+2. Check `LOG_LEVEL=DEBUG` for detailed audio capture logs
+
+### Symlink error during build (electron-builder)
+
+**Cause:** Windows doesn't allow symlink creation without Developer Mode or admin privileges.
+
+**Solution:**
+1. Enable **Developer Mode**: Settings > For Developers > Developer Mode ON
+2. Clear the failed cache: `rmdir /s /q "%LOCALAPPDATA%\electron-builder\Cache\winCodeSign"`
+3. Re-run `packaging\build.bat`
 
 ---
 
@@ -330,9 +360,9 @@ Performance is also shown in the overlay's bottom bar.
 ## Known Limitations
 
 - **Windows only** — WASAPI loopback is Windows-specific
-- **Requires internet** — All AI processing is cloud-based (OpenAI)
-- **API costs** — Each audio chunk incurs Whisper + GPT-4o API charges
-- **Latency** — Dependent on network speed and OpenAI response times (~3-5s total)
+- **Requires internet** — All AI processing is cloud-based
+- **API costs** — Each audio chunk incurs STT + LLM API charges
+- **Latency** — Dependent on network speed and API response times (~3-5s total)
 - **Audio format** — Captures system-wide audio, not per-application
 
 ---
@@ -346,4 +376,5 @@ Performance is also shown in the overlay's bottom bar.
 - [ ] Conversation history / export
 - [ ] Custom system prompts / personas
 - [ ] Local STT fallback for offline use
-- [ ] Packaged installer (electron-builder)
+- [x] Packaged installer (electron-builder)
+- [x] In-app settings UI (no .env editing for end users)

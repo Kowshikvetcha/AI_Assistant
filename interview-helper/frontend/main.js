@@ -16,9 +16,166 @@ const {
 } = require("electron");
 const path = require("path");
 const fs = require("fs");
+const { spawn } = require("child_process");
 
 let mainWindow = null;
+let settingsWindow = null;
+let backendProcess = null;
 let captureInProgress = false;
+
+// ── Settings Storage ──
+
+function getSettingsPath() {
+  return path.join(app.getPath("userData"), "settings.json");
+}
+
+function loadSettings() {
+  try {
+    const p = getSettingsPath();
+    if (fs.existsSync(p)) {
+      return JSON.parse(fs.readFileSync(p, "utf-8"));
+    }
+  } catch (err) {
+    console.error("Failed to load settings:", err);
+  }
+  return null;
+}
+
+function saveSettingsFile(settings) {
+  const p = getSettingsPath();
+  const dir = path.dirname(p);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  fs.writeFileSync(p, JSON.stringify(settings, null, 2), "utf-8");
+}
+
+// ── Backend Process Management ──
+
+function getBackendExePath() {
+  if (!app.isPackaged) {
+    return null; // dev mode — use python directly
+  }
+  return path.join(process.resourcesPath, "backend", "main.exe");
+}
+
+function buildBackendEnv(settings) {
+  // In packaged mode, start with a clean environment (only essential system vars)
+  // to avoid leaking the builder's env vars (API keys, etc.) into the distributed app.
+  // In dev mode, inherit the full environment so .env and system vars work normally.
+  const env = app.isPackaged
+    ? {
+        PATH: process.env.PATH || "",
+        SYSTEMROOT: process.env.SYSTEMROOT || "",
+        TEMP: process.env.TEMP || "",
+        TMP: process.env.TMP || "",
+        USERPROFILE: process.env.USERPROFILE || "",
+        APPDATA: process.env.APPDATA || "",
+        LOCALAPPDATA: process.env.LOCALAPPDATA || "",
+        PROGRAMDATA: process.env.PROGRAMDATA || "",
+      }
+    : { ...process.env };
+
+  if (settings) {
+    const keys = [
+      "AI_PROVIDER", "AI_API_KEY", "AI_BASE_URL",
+      "LLM_MODEL", "SUMMARY_MODEL", "STT_MODEL",
+      "LLM_MAX_TOKENS", "WEBSOCKET_PORT", "AUDIO_CHUNK_DURATION", "LOG_LEVEL",
+    ];
+    for (const key of keys) {
+      if (settings[key] !== undefined && settings[key] !== null && settings[key] !== "") {
+        env[key] = String(settings[key]);
+      }
+    }
+  }
+  // When packaged, tell the backend where bundled Tesseract lives
+  if (app.isPackaged) {
+    const bundledTess = path.join(process.resourcesPath, "backend", "tesseract", "tesseract.exe");
+    if (fs.existsSync(bundledTess)) {
+      env.TESSERACT_CMD = bundledTess;
+    }
+  }
+  return env;
+}
+
+function startBackend(settings) {
+  stopBackend();
+
+  const backendExe = getBackendExePath();
+  const env = buildBackendEnv(settings);
+
+  if (backendExe && fs.existsSync(backendExe)) {
+    // Production: run PyInstaller-bundled exe
+    backendProcess = spawn(backendExe, [], {
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+    });
+  } else {
+    // Development: run Python directly
+    const pythonScript = path.join(__dirname, "..", "backend", "main.py");
+    backendProcess = spawn("python", [pythonScript], {
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+      cwd: path.join(__dirname, "..", "backend"),
+    });
+  }
+
+  backendProcess.stdout.on("data", (data) => {
+    console.log(`[Backend] ${data.toString().trim()}`);
+  });
+
+  backendProcess.stderr.on("data", (data) => {
+    console.error(`[Backend] ${data.toString().trim()}`);
+  });
+
+  backendProcess.on("exit", (code) => {
+    console.log(`[Backend] Process exited with code ${code}`);
+    backendProcess = null;
+  });
+
+  // Notify frontend that backend is starting
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("backend-status", "Starting backend...");
+  }
+}
+
+function stopBackend() {
+  if (backendProcess) {
+    backendProcess.kill();
+    backendProcess = null;
+  }
+}
+
+// ── Settings Window ──
+
+function openSettingsWindow() {
+  if (settingsWindow && !settingsWindow.isDestroyed()) {
+    settingsWindow.focus();
+    return;
+  }
+
+  settingsWindow = new BrowserWindow({
+    width: 450,
+    height: 560,
+    resizable: false,
+    frame: false,
+    transparent: false,
+    parent: mainWindow,
+    modal: true,
+    show: false,
+    backgroundColor: "#0f0f19",
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  settingsWindow.loadFile("settings.html");
+  settingsWindow.once("ready-to-show", () => settingsWindow.show());
+  settingsWindow.on("closed", () => { settingsWindow = null; });
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -47,16 +204,18 @@ function createWindow() {
   mainWindow.setAlwaysOnTop(true, "screen-saver"); // Highest priority
   mainWindow.setVisibleOnAllWorkspaces(true);
 
-  // Aggressively keep window on top (paused during screen capture)
+  // Aggressively keep window on top (paused during screen capture and settings)
   const topInterval = setInterval(() => {
-    if (mainWindow && !mainWindow.isDestroyed() && !captureInProgress) {
+    const paused = captureInProgress || (settingsWindow && !settingsWindow.isDestroyed());
+    if (mainWindow && !mainWindow.isDestroyed() && !paused) {
       mainWindow.setAlwaysOnTop(true, "screen-saver");
       mainWindow.moveTop();
     }
   }, 1000);
 
   mainWindow.on("blur", () => {
-    if (mainWindow && !mainWindow.isDestroyed() && !captureInProgress) {
+    const paused = captureInProgress || (settingsWindow && !settingsWindow.isDestroyed());
+    if (mainWindow && !mainWindow.isDestroyed() && !paused) {
       mainWindow.setAlwaysOnTop(true, "screen-saver");
     }
   });
@@ -336,8 +495,49 @@ ipcMain.handle("capture-screen", async () => {
   }
 });
 
+// ── IPC: Settings ──
+
+ipcMain.handle("get-settings", () => {
+  return loadSettings() || {};
+});
+
+ipcMain.handle("save-settings", (event, settings) => {
+  saveSettingsFile(settings);
+  // Restart backend with new settings
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("backend-status", "Restarting backend...");
+  }
+  startBackend(settings);
+  // Close settings window
+  if (settingsWindow && !settingsWindow.isDestroyed()) {
+    settingsWindow.close();
+  }
+  return { success: true };
+});
+
+ipcMain.on("close-settings", () => {
+  if (settingsWindow && !settingsWindow.isDestroyed()) {
+    settingsWindow.close();
+  }
+});
+
+ipcMain.on("open-settings", () => {
+  openSettingsWindow();
+});
+
+ipcMain.handle("get-backend-port", () => {
+  const settings = loadSettings();
+  return (settings && settings.WEBSOCKET_PORT) || 8765;
+});
+
 app.whenReady().then(() => {
   createWindow();
+
+  // Load settings and start backend
+  const settings = loadSettings();
+  if (settings && settings.AI_API_KEY) {
+    startBackend(settings);
+  }
 
   // Register global shortcut: Ctrl+Shift+H to toggle visibility
   const ret = globalShortcut.register("CommandOrControl+Shift+H", () => {
@@ -410,6 +610,11 @@ app.on("will-quit", () => {
   globalShortcut.unregisterAll();
 });
 
+app.on("before-quit", () => {
+  stopBackend();
+});
+
 app.on("window-all-closed", () => {
+  stopBackend();
   app.quit();
 });

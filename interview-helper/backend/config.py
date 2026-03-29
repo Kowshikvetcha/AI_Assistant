@@ -8,8 +8,16 @@ from typing import Optional
 from pydantic_settings import BaseSettings
 from pydantic import Field
 
-# Resolve .env path relative to this file's parent (backend/) -> project root
-ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
+# Resolve .env path relative to this file's parent (backend/) -> project root.
+# When packaged (PyInstaller), skip .env entirely — settings arrive via env vars.
+import sys as _sys
+
+if getattr(_sys, "frozen", False):
+    # Running as PyInstaller bundle — no .env file
+    ENV_PATH = None
+else:
+    _candidate_env = Path(__file__).resolve().parent.parent / ".env"
+    ENV_PATH = str(_candidate_env) if _candidate_env.is_file() else None
 
 
 # OpenAI-compatible provider presets.
@@ -107,7 +115,7 @@ class Settings(BaseSettings):
     )
 
     model_config = {
-        "env_file": str(ENV_PATH),
+        "env_file": ENV_PATH,  # None when .env absent (packaged builds)
         "env_file_encoding": "utf-8",
         "case_sensitive": True,
     }

@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Settings — Interview Helper</title>
+  <link rel="stylesheet" href="settings.css" />
+</head>
+<body>
+  <div id="settings-app">
+    <!-- Title bar -->
+    <div id="settings-titlebar">
+      <span class="settings-title">Settings</span>
+      <button id="btn-close" class="title-btn close" title="Close">&times;</button>
+    </div>
+
+    <div id="settings-body">
+      <!-- Provider (mandatory) -->
+      <div class="field">
+        <label for="ai-provider">AI Provider <span class="required">*</span></label>
+        <select id="ai-provider">
+          <option value="openai">OpenAI</option>
+          <option value="groq">Groq</option>
+          <option value="openrouter">OpenRouter</option>
+          <option value="together">Together AI</option>
+          <option value="fireworks">Fireworks AI</option>
+          <option value="deepseek">DeepSeek</option>
+          <option value="ollama">Ollama (Local)</option>
+        </select>
+        <span id="provider-hint" class="hint"></span>
+      </div>
+
+      <!-- API Key (mandatory) -->
+      <div class="field">
+        <label for="api-key">API Key <span class="required">*</span></label>
+        <div class="key-wrap">
+          <input type="password" id="api-key" placeholder="Enter your API key" autocomplete="off" spellcheck="false" />
+          <button type="button" id="toggle-key" class="toggle-btn" title="Show/hide key">&#128065;</button>
+        </div>
+      </div>
+
+      <hr class="divider" />
+
+      <!-- Optional model overrides -->
+      <p class="section-label">Model Overrides <span class="optional-tag">optional</span></p>
+
+      <div class="field">
+        <label for="llm-model">LLM Model</label>
+        <input type="text" id="llm-model" placeholder="" autocomplete="off" spellcheck="false" />
+      </div>
+
+      <div class="field">
+        <label for="summary-model">Summary Model</label>
+        <input type="text" id="summary-model" placeholder="" autocomplete="off" spellcheck="false" />
+      </div>
+
+      <div class="field">
+        <label for="stt-model">STT Model</label>
+        <input type="text" id="stt-model" placeholder="" autocomplete="off" spellcheck="false" />
+      </div>
+
+      <!-- Validation / status message -->
+      <div id="msg" class="msg"></div>
+
+      <!-- Buttons -->
+      <div class="btn-row">
+        <button id="btn-cancel" class="btn btn-cancel">Cancel</button>
+        <button id="btn-save" class="btn btn-save" disabled>Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="settings-renderer.js"></script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C \"C:\\\\Users\\\\Kowshik\\\\projects\\\\AI_Assistant\" log --oneline -20)",
+      "Bash(dir \"%APPDATA%\\\\interview-helper\"\" 2>nul || echo \"Directory not found at %%APPDATA%%interview-helper\" && dir \"%APPDATA%Interview Helper\"\")",
+      "Bash(dir /s /b \"%APPDATA%\\\\*settings.json\")",
+      "Bash(findstr:*)",
+      "Bash(powershell -Command:*)",
+      "Bash(Select-Object -First 5)"
+    ]
+  }
+}
