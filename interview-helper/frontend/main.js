@@ -17,11 +17,16 @@ const {
 const path = require("path");
 const fs = require("fs");
 const { spawn } = require("child_process");
+const http = require("http");
 
 let mainWindow = null;
 let settingsWindow = null;
 let backendProcess = null;
 let captureInProgress = false;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 // ── Settings Storage ──
 
@@ -138,6 +143,47 @@ function startBackend(settings) {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send("backend-status", "Starting backend...");
   }
+}
+
+function waitForBackendReady(port, timeoutMs = 15000) {
+  const deadline = Date.now() + timeoutMs;
+
+  return new Promise((resolve) => {
+    const tryOnce = () => {
+      if (!backendProcess) {
+        resolve(false);
+        return;
+      }
+
+      const req = http.get(
+        {
+          hostname: "127.0.0.1",
+          port,
+          path: "/health",
+          timeout: 1500,
+        },
+        (res) => {
+          res.resume();
+          resolve(res.statusCode === 200);
+        }
+      );
+
+      req.on("error", async () => {
+        if (Date.now() >= deadline) {
+          resolve(false);
+          return;
+        }
+        await sleep(300);
+        tryOnce();
+      });
+
+      req.on("timeout", () => {
+        req.destroy();
+      });
+    };
+
+    tryOnce();
+  });
 }
 
 function stopBackend() {
@@ -530,13 +576,20 @@ ipcMain.handle("get-backend-port", () => {
   return (settings && settings.WEBSOCKET_PORT) || 8765;
 });
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   createWindow();
 
   // Load settings and start backend
   const settings = loadSettings();
   if (settings && settings.AI_API_KEY) {
     startBackend(settings);
+    const backendReady = await waitForBackendReady((settings && settings.WEBSOCKET_PORT) || 8765);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(
+        "backend-status",
+        backendReady ? "Backend ready" : "Backend failed to start"
+      );
+    }
   }
 
   // Register global shortcut: Ctrl+Shift+H to toggle visibility

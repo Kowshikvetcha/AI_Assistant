@@ -6,6 +6,7 @@ Streams system output audio in configurable chunks.
 import asyncio
 import numpy as np
 import logging
+import ctypes.util
 from typing import AsyncGenerator
 
 # ── Numpy 2.x compatibility patch for soundcard ──────────────────────
@@ -28,6 +29,28 @@ if not hasattr(np, "_original_fromstring"):
 # ─────────────────────────────────────────────────────────────────────
 
 logger = logging.getLogger("interview_helper")
+
+
+def _patch_windows_find_library_for_soundcard() -> None:
+    """Make Windows system DLL lookup stable for packaged SoundCard imports.
+
+    This is a narrow, Windows-only patch for packaged environments where
+    `ctypes.utils.find_library('ole32')` may return `None`. Returning the
+    concrete DLL filename preserves existing behavior while avoiding the
+    packaged-app lookup failure seen on some end-user machines.
+    """
+    original_find_library = ctypes.util.find_library
+    if getattr(original_find_library, "_interview_helper_soundcard_patch", False):
+        return
+
+    def _patched_find_library(name: str):
+        normalized = (name or "").lower()
+        if normalized == "ole32":
+            return "ole32.dll"
+        return original_find_library(name)
+
+    _patched_find_library._interview_helper_soundcard_patch = True
+    ctypes.util.find_library = _patched_find_library
 
 
 def _find_capture_device(sc):
@@ -96,6 +119,7 @@ async def capture_system_audio(
         np.ndarray of shape (frames, channels) with dtype float32.
     """
     try:
+        _patch_windows_find_library_for_soundcard()
         import soundcard as sc
     except ImportError:
         logger.error("soundcard is not installed. Run: pip install soundcard")

@@ -252,6 +252,12 @@ This is the file you send to users.
 
 ---
 
+### Error: Audio capture fails in packaged app with `ctypes.utils.find_library() did not manage to locate a library called 'ole32'`
+**Cause:** The packaged backend included the `soundcard` Python files but did not bundle its compiled Windows extension modules, so `soundcard` falls back to runtime library discovery that can fail inside the packaged app.
+**Fix:** Rebuild the backend with the current `packaging\backend.spec`, which now explicitly collects `soundcard` submodules, metadata, and dynamic libraries. After rebuilding, verify that `packaging\dist\backend\_internal\soundcard\` contains compiled `soundcard` binaries in addition to the `.py.h` files.
+
+---
+
 ### Error: electron-builder step fails with `backend folder not found`
 **Cause:** PyInstaller (Step 2) did not complete successfully
 **Fix:** Scroll up in the terminal to find the PyInstaller error and fix it first. The `packaging\dist\backend\` folder must exist before electron-builder runs.

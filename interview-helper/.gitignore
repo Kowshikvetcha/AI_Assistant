@@ -4,6 +4,8 @@ __pycache__/
 *.pyo
 venv/
 .venv/
+venv312/
+.venv312/
 *.egg-info/
 
 # Packaging folder (build scripts — can be recreated)
