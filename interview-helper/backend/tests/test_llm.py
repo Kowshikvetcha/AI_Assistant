@@ -12,7 +12,7 @@ import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from llm import generate_answer, _parse_llm_json
-from models import LLMResponse
+from models import InputMode, LLMResponse
 
 
 @pytest.fixture(autouse=True)
@@ -75,6 +75,46 @@ async def test_generate_answer_success():
     assert "decorator" in resp.code_example.lower() or "@" in resp.code_example
     assert tokens == 200
     assert latency > 0
+    assert resp.input_mode == InputMode.AUDIO
+
+
+@pytest.mark.asyncio
+async def test_generate_answer_text_mode_uses_text_prompt():
+    mock_client = AsyncMock()
+    mock_client.chat.completions.create = AsyncMock(
+        return_value=_mock_completion(VALID_LLM_JSON, tokens=123)
+    )
+
+    with patch("llm._get_client", return_value=mock_client):
+        resp, _, _ = await generate_answer(
+            "Pick the correct answer",
+            api_key="test-key",
+            input_mode=InputMode.TEXT,
+        )
+
+    system_prompt = mock_client.chat.completions.create.call_args.kwargs["messages"][0]["content"]
+    assert "typed manually" in system_prompt
+    assert resp.input_mode == InputMode.TEXT
+
+
+@pytest.mark.asyncio
+async def test_generate_answer_screen_mode_uses_screen_prompt():
+    mock_client = AsyncMock()
+    mock_client.chat.completions.create = AsyncMock(
+        return_value=_mock_completion(VALID_LLM_JSON, tokens=111)
+    )
+
+    with patch("llm._get_client", return_value=mock_client):
+        resp, _, _ = await generate_answer(
+            "Which option is correct? A. foo B. bar",
+            api_key="test-key",
+            input_mode=InputMode.SCREEN,
+        )
+
+    system_prompt = mock_client.chat.completions.create.call_args.kwargs["messages"][0]["content"]
+    assert "screen capture/OCR" in system_prompt
+    assert "direct_answer must start with: \"Answer: <option>\"" in system_prompt
+    assert resp.input_mode == InputMode.SCREEN
 
 
 @pytest.mark.asyncio

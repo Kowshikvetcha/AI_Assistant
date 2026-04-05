@@ -23,6 +23,8 @@ from models import (
     PerformanceMetrics,
     TranscriptMessage,
     ChatRequest,
+    InputMode,
+    ScreenAnswerRequest,
     ScreenCaptureRequest,
 )
 from websocket_manager import ConnectionManager, parse_control_message
@@ -194,7 +196,7 @@ async def resume_status():
 
 @app.post("/chat")
 async def chat(request: ChatRequest):
-    """Answer a manually typed user question via the same LLM pipeline."""
+    """Answer a manually typed user question via the text LLM pipeline."""
     question = request.question.strip()
     if not question:
         return {"status": "error", "error": "Question cannot be empty."}
@@ -208,6 +210,7 @@ async def chat(request: ChatRequest):
             interview_summary="",
             resume_context=_resume_context,
             base_url=settings.base_url,
+            input_mode=InputMode.TEXT,
         )
         return llm_resp.model_dump()
     except RuntimeError as e:
@@ -241,6 +244,47 @@ async def capture_screen(request: ScreenCaptureRequest):
 
     logger.info(f"OCR extracted {len(extracted_text)} chars from screenshot")
     return {"status": "ok", "text": extracted_text}
+
+
+@app.post("/answer-screen")
+async def answer_screen(request: ScreenAnswerRequest):
+    """Extract text from a screenshot and answer it using the screen-specific LLM pipeline."""
+    import base64
+
+    try:
+        image_bytes = base64.b64decode(request.image)
+    except Exception:
+        return {"status": "error", "error": "Invalid base64 image data."}
+
+    try:
+        extracted_text = await asyncio.to_thread(extract_text_from_image, image_bytes)
+    except RuntimeError as e:
+        logger.error(f"OCR error: {e}")
+        return {"status": "error", "error": str(e)}
+
+    if not extracted_text:
+        return {"status": "error", "error": "No text could be extracted from the image."}
+
+    try:
+        llm_resp, _, _ = await generate_answer(
+            transcript=extracted_text,
+            api_key=settings.api_key,
+            model=settings.llm_model,
+            max_tokens=settings.LLM_MAX_TOKENS,
+            interview_summary="",
+            resume_context=_resume_context,
+            base_url=settings.base_url,
+            input_mode=InputMode.SCREEN,
+        )
+        payload = llm_resp.model_dump()
+        payload["ocr_text"] = extracted_text
+        return payload
+    except RuntimeError as e:
+        logger.error(f"❌ Screen answer LLM error: {e}")
+        return {"status": "error", "error": f"LLM error: {e}"}
+    except Exception as e:
+        logger.error(f"❌ Screen answer endpoint error: {e}")
+        return {"status": "error", "error": "Failed to process screen answer request."}
 
 
 # ── Audio → STT → LLM pipeline (producer/consumer) ─────────────────

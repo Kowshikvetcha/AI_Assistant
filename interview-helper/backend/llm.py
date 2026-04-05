@@ -10,11 +10,65 @@ import re
 from typing import Optional
 from openai import AsyncOpenAI, APIError, RateLimitError, APITimeoutError
 from config import get_settings
-from models import LLMResponse
+from models import InputMode, LLMResponse
 from utils import perf_timer
 
 logger = logging.getLogger("interview_helper")
 settings = get_settings()
+
+
+def _build_system_prompt(input_mode: InputMode) -> str:
+    if input_mode == InputMode.SCREEN:
+        return """You are a technical interview copilot. Your job is to produce accurate, concise, interview-ready answers.
+
+The input came from screen capture/OCR. The text may have minor OCR errors, but it is not noisy speech transcription.
+
+You MUST output valid JSON with exactly this schema:
+{
+  "corrected_question": "The question as you understood it",
+  "summary": "One-line summary of the question",
+  "direct_answer": "Answer-first output",
+  "bullet_points": ["Key point 1", "Key point 2", "Key point 3"],
+  "code_example": "Short code snippet if relevant, otherwise empty string",
+  "followup_question": "One strong interviewer-style follow-up question"
+}
+
+Rules:
+- Silently fix obvious OCR mistakes.
+- If the content is multiple-choice or contains answer options, choose the single best option explicitly.
+- For multiple-choice questions, direct_answer must start with: "Answer: <option>".
+- If option text is available, include it right after the option label.
+- After the answer-first opening, give a brief explanation in 1-3 short sentences.
+- Do not hide the final choice inside a paragraph.
+- If the screenshot is not multiple-choice, still start with a direct one-line answer before the explanation.
+- Keep bullet_points short and scannable.
+- Never include markdown fences, commentary, or any text outside the JSON object.
+"""
+
+    if input_mode == InputMode.TEXT:
+        return """You are a technical interview copilot. Your job is to produce accurate, concise, interview-ready answers.
+
+The input was typed manually, so do not apply speech-to-text reconstruction behavior unless there is an obvious typo.
+
+You MUST output valid JSON with exactly this schema:
+{
+  "corrected_question": "The cleaned question",
+  "summary": "One-line summary of the question",
+  "direct_answer": "Direct concise answer",
+  "bullet_points": ["Key point 1", "Key point 2", "Key point 3"],
+  "code_example": "Short code snippet if relevant, otherwise empty string",
+  "followup_question": "One strong interviewer-style follow-up question"
+}
+
+Rules:
+- Answer the typed question directly without STT assumptions.
+- Start with the answer, then add short reasoning.
+- If the question is multiple-choice, name the best option explicitly first.
+- Be correct first, concise second.
+- Never include markdown fences, commentary, or any text outside the JSON object.
+"""
+
+    return SYSTEM_PROMPT
 
 SYSTEM_PROMPT = """You are a technical interview copilot. Your job is to produce accurate, concise, interview-ready answers.
 
@@ -241,6 +295,7 @@ async def generate_answer(
     interview_summary: str = "",
     resume_context: str = "",
     base_url: Optional[str] = None,
+    input_mode: InputMode = InputMode.AUDIO,
 ) -> tuple[LLMResponse, float, int]:
     """Generate a structured interview answer from a transcript.
 
@@ -263,19 +318,25 @@ async def generate_answer(
     effective_model = model or settings.llm_model
     last_error: Exception | None = None
 
-    latest_question, supporting_context = _split_latest_question(transcript)
-    if not latest_question:
-        latest_question = transcript.strip()
+    if input_mode == InputMode.AUDIO:
+        latest_question, supporting_context = _split_latest_question(transcript)
+        if not latest_question:
+            latest_question = transcript.strip()
 
-    # Build context-aware user message with explicit priority ordering.
-    user_content = ""
-    if resume_context:
-        user_content += f"[Candidate background - low priority]\n{resume_context}\n\n"
-    if interview_summary:
-        user_content += f"[Older interview summary - low priority]\n{interview_summary}\n\n"
-    if supporting_context:
-        user_content += f"[Recent supporting context - medium priority]\n{supporting_context}\n\n"
-    user_content += f"[Latest question - highest priority - transcribed from speech, may contain errors]\n{latest_question}"
+        user_content = ""
+        if resume_context:
+            user_content += f"[Candidate background - low priority]\n{resume_context}\n\n"
+        if interview_summary:
+            user_content += f"[Older interview summary - low priority]\n{interview_summary}\n\n"
+        if supporting_context:
+            user_content += f"[Recent supporting context - medium priority]\n{supporting_context}\n\n"
+        user_content += f"[Latest question - highest priority - transcribed from speech, may contain errors]\n{latest_question}"
+    else:
+        latest_question = transcript.strip()
+        user_content = ""
+        if resume_context:
+            user_content += f"[Candidate background - low priority]\n{resume_context}\n\n"
+        user_content += f"[Question]\n{latest_question}"
 
     for attempt in range(1, max_retries + 1):
         try:
@@ -283,7 +344,7 @@ async def generate_answer(
                 response = await client.chat.completions.create(
                     model=effective_model,
                     messages=[
-                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "system", "content": _build_system_prompt(input_mode)},
                         {"role": "user", "content": user_content},
                     ],
                     max_tokens=max_tokens,
@@ -304,6 +365,7 @@ async def generate_answer(
                 parsed = _fallback_payload_from_text(raw_content)
             parsed = _normalize_payload(parsed)
             llm_response = LLMResponse(
+                input_mode=input_mode,
                 corrected_question=parsed.get("corrected_question", ""),
                 summary=parsed.get("summary", ""),
                 direct_answer=parsed.get("direct_answer", ""),

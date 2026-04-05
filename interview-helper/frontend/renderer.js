@@ -445,7 +445,6 @@ async function captureScreen() {
         const base64Image = await window.electronAPI.captureScreen();
 
         if (!base64Image) {
-            // User cancelled the selection
             updateStatus(
                 isCapturing ? "capturing" : "connected",
                 isCapturing ? "Capturing..." : "Connected"

@@ -7,6 +7,13 @@ from typing import Optional
 from enum import Enum
 
 
+class InputMode(str, Enum):
+    """Source modality for question answering."""
+    AUDIO = "audio"
+    TEXT = "text"
+    SCREEN = "screen"
+
+
 class MessageType(str, Enum):
     """WebSocket message types."""
     TRANSCRIPT = "transcript"
@@ -27,6 +34,9 @@ class TranscriptMessage(BaseModel):
 class LLMResponse(BaseModel):
     """Structured LLM answer for interview questions."""
     type: MessageType = MessageType.LLM_RESPONSE
+    input_mode: InputMode = Field(
+        InputMode.AUDIO, description="Source modality used to generate the answer"
+    )
     corrected_question: str = Field(
         "", description="The question as the LLM understood it, with STT errors corrected"
     )
@@ -78,6 +88,11 @@ class PerformanceMetrics(BaseModel):
 class ChatRequest(BaseModel):
     """Manual chat request from the UI."""
     question: str = Field(..., min_length=1, description="User question text")
+
+
+class ScreenAnswerRequest(BaseModel):
+    """Answer generation request from a captured screen image."""
+    image: str = Field(..., description="Base64-encoded screenshot image")
 
 
 class ScreenCaptureRequest(BaseModel):
