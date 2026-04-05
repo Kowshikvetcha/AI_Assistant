@@ -2,6 +2,8 @@
 
 A desktop tool that captures system audio from Zoom / Google Meet / Teams, transcribes it via OpenAI Whisper API, generates structured interview answers via GPT-4o, and displays them in a floating always-on-top overlay.
 
+> Contributor note: before changing `frontend/` or Electron window/capture behavior, read `STEALTH_FEATURE_DESIGN.md` to preserve stealth behavior during screen sharing.
+
 ---
 
 ## Architecture
